@@ -12,7 +12,7 @@ void setup() {
   while (!Serial && (millis() - startTime < 2000)) {
     ; // Wait for serial port to connect, with a 2-second timeout
   }
-  Serial.println("\n>>> Starting Gustav VFD Clock...");
+  Serial.println("\n>>> Starting Temporal Anomaly Clock...");
   
   serialMutex = xSemaphoreCreateMutex();
   app.setup();

@@ -1,23 +1,22 @@
-#ifndef TEMPORAL_ANOMALY__APP_H
-#define TEMPORAL_ANOMALY__APP_H
+#ifndef TEMPORAL_ANOMALY_APP_H
+#define TEMPORAL_ANOMALY_APP_H
 
 #include "display_manager.h"
-
 #include "temporal_anomaly_types.h"
 #include "temporal_anomaly_access_point_manager.h"
 #include "temporal_anomaly_weather_manager.h"
 #include "temporal_anomaly_preferences.h"
+#include "temporal_anomaly_animation.h" 
 
 #include "RTClib.h"
 #include <ESP32NTPClock.h>
-#include <ESP32NTPClock_MAX6921.h> // Use the VFD driver
+#include <ESP32NTPClock_MAX6921.h>
 #include <base_ntp_clock_app.h>
 #include <i_weather_clock.h>
 
 #include <memory>
 
 class DisplayManager;
-
 #define AP_HOST_NAME "temporal-anomaly"
 
 #define DISP_LEN    10
@@ -35,18 +34,19 @@ public:
         return instance;
     }
     
-    ~TemporalAnomalyClockApp(); 
+    ~TemporalAnomalyClockApp() = default; 
 
     void setup() override;
     void loop() override;
 
     void setupHardware() override;
-
     TemporalAnomalyPreferences& getPrefs() { return _appPrefs; }
     float getTempData();
     float getHumidityData();
     
-    // --- Implementation of the IBaseClock & IWeatherClock interfaces ---
+    void triggerMatrixAnimation();
+    void resetClockAnimation();
+    
     const char* getAppName() const override;
     const char* getSsid() const override { return _appPrefs.config.ssid; }
     const char* getPassword() const override { return _appPrefs.config.password; }
@@ -60,7 +60,7 @@ public:
     bool isOkToRunScenes() const override;
     void syncRtcFromNtp() override;
     void activateAccessPoint() override;
-    void formatTime(char *txt, unsigned int txt_size, const char *format, time_t now) override;
+    void formatTime(char *txt, unsigned int txt_size, const char *format, time_t now) override; 
     IDisplayDriver& getDisplay() override { return _display; }
     DisplayManager& getClock() override;
     RTC_DS1307& getRtc() override { return _rtc; }
@@ -68,18 +68,17 @@ public:
 
 private:
     TemporalAnomalyClockApp();
-
-    // VFD-specific hardware components
     DispDriverMAX6921 _display;
     std::unique_ptr<DisplayManager> _displayManager;
     RTC_DS1307 _rtc;
     bool _rtcActive;
-
-    // Application-specific preferences & managers
+    
     TemporalAnomalyPreferences _appPrefs;
     TemporalAnomalyAccessPointManager _apManager;
-    std::unique_ptr<TemporalAnomalyWeatherDataManager> _weatherManager; 
+    std::unique_ptr<TemporalAnomalyWeatherDataManager> _weatherManager;
     OpenWeatherData _currentWeatherData;
+
+    TemporalAnomalyAnimation* _continuousClockAnimation = nullptr;
 };
 
-#endif // TEMPORAL_ANOMALY__APP_H
+#endif // TEMPORAL_ANOMALY_APP_H

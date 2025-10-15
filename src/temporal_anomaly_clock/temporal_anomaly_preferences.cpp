@@ -20,7 +20,7 @@ void TemporalAnomalyPreferences::getPreferences() {
   prefs.getString(APP_PREF_OWM_COUNTRY_CODE, config.owm_country_code, sizeof(config.owm_country_code));
   prefs.getString(APP_PREF_TEMP_UNIT, config.tempUnit, sizeof(config.tempUnit));
 
-  config.anomalyLevel = prefs.getUInt(APP_ANOMALY_LEVEL_KEY, 0); // Default to 0 (Accurate)
+  config.anomalyLevel = 10; //prefs.getUInt(APP_ANOMALY_LEVEL_KEY, 0); // Default to 0 (Accurate)
   
   prefs.end();
 }
