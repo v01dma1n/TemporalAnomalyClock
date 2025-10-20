@@ -44,6 +44,8 @@ private:
     
     FastRandom _rng;
 
+    void applySimpleAnomaly(time_t realEpoch);
+
     void updateAnomalousTime();
     float easeInOut(float t);
     float lerp(float a, float b, float t);

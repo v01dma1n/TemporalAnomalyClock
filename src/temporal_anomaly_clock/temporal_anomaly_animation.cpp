@@ -80,6 +80,25 @@ void TemporalAnomalyAnimation::triggerNewAnomalyTarget() {
             (int)(_holdDuration_ms / 1000));
 }
 
+void TemporalAnomalyAnimation::applySimpleAnomaly(time_t realEpoch) {
+    // HARDCODED ANOMALY: +1 hour and +15 seconds
+    const int ANOMALY_SECONDS = 3600 + 15; 
+    
+    _anomalousEpoch = realEpoch + ANOMALY_SECONDS;
+    localtime_r(&_anomalousEpoch, &_anomalousTime); 
+    
+    static time_t last_real_log_epoch = 0;
+    if (realEpoch != last_real_log_epoch) {
+        last_real_log_epoch = realEpoch;
+        LOGDBG("TEST: LIVE | Real: %lu | Anomaly: %lu | Time: %02d:%02d:%02d", 
+               (long unsigned int)realEpoch, 
+               (long unsigned int)_anomalousEpoch, 
+               _anomalousTime.tm_hour,
+               _anomalousTime.tm_min,
+               _anomalousTime.tm_sec);
+    }
+}
+
 void TemporalAnomalyAnimation::updateAnomalousTime() {
     unsigned long now_ms = millis();
     time_t realEpoch = time(nullptr);
@@ -142,9 +161,9 @@ void TemporalAnomalyAnimation::update() {
 
     _display->print(txt, _dotsWithPreviousChar); 
 
-    if (_anomalousTime.tm_sec == 0) {
-        TemporalAnomalyClockApp::getInstance().triggerMatrixAnimation();
-    }
+    // if (_anomalousTime.tm_sec == 0) {
+    //     TemporalAnomalyClockApp::getInstance().triggerMatrixAnimation();
+    // }
 }
 
 void TemporalAnomalyAnimation::formatTime(char *txt, unsigned txt_size) const {

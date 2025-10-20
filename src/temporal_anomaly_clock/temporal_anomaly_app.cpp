@@ -4,15 +4,19 @@
 #include "version.h"             
 #include <Wire.h> 
 #include "anim_matrix.h" 
-#include "temporal_anomaly_animation.h" 
+#include "temporal_anomaly_animation.h" // Still required for logic definition
 #include <algorithm> 
+#include <memory> 
+
+// Global object to manage the permanent anomaly state
+static TemporalAnomalyAnimation s_anomaly_clock(" %H.%M.%S", false, true);
 
 // --- Data getters for the scene playlist ---
 float TemporalAnomalyClockApp_getTimeData() { return 0; }
 float TemporalAnomalyClockApp_getTempData() { return TemporalAnomalyClockApp::getInstance().getTempData(); }
 float TemporalAnomalyClockApp_getHumidityData() { return TemporalAnomalyClockApp::getInstance().getHumidityData(); }
 
-// Scene playlist: only Matrix is necessary for the per-minute transition.
+// Scene playlist is now only used for the Matrix parameters.
 static const DisplayScene scenePlaylist[] = {
     { "Matrix", "TEMPORAL ANOMALY", MATRIX, false, false, 4000, 100, 50, TemporalAnomalyClockApp_getTimeData } 
 };
@@ -20,7 +24,8 @@ static const int numScenes = sizeof(scenePlaylist) / sizeof(DisplayScene);
 
 // --- Constructor ---
 TemporalAnomalyClockApp::TemporalAnomalyClockApp() :
-    _display(DISP_LEN, VSPI_SCLK, VSPI_MISO, VSPI_MOSI, VSPI_SS, VSPI_BLANK),
+    // --- FIX 1: Use the 1-argument (buffer-only) constructor ---
+    _display(DISP_LEN),
     _appPrefs(),
     _apManager(_appPrefs)
 {
@@ -28,22 +33,9 @@ TemporalAnomalyClockApp::TemporalAnomalyClockApp() :
     _prefs = &_appPrefs;
     BaseNtpClockApp::_apManager = &_apManager;
     _rtcActive = false;
-    
-    // Allocate the continuous animation on the heap
-    TemporalAnomalyAnimation* newAnim = new TemporalAnomalyAnimation(" %H.%M.%S", false, true);
-    
-    // --- FIX: Manually trigger setup/initialization here ---
-    // Since the FSM/SceneManager clears the animation, we must initialize the state
-    // before the object is moved.
-    newAnim->setup(&getDisplay());
-    
-    // Store the raw pointer for direct access later
-    _continuousClockAnimation = newAnim; 
-    
-    // Give ownership of the allocated object to the DisplayManager's unique_ptr
-    getClock().setAnimation(std::unique_ptr<TemporalAnomalyAnimation>(newAnim));
 }
  
+TemporalAnomalyClockApp::~TemporalAnomalyClockApp() = default;
 
 void TemporalAnomalyClockApp::setupHardware() {
     i2c_bus_clear();
@@ -55,80 +47,56 @@ void TemporalAnomalyClockApp::setupHardware() {
     }
 }
 
-// --- Main Setup and Loop ---
+// --- Main Setup ---
 void TemporalAnomalyClockApp::setup() {
+    _appPrefs.setup();
+    g_appLogLevel = _appPrefs.config.logLevel;
 
     BaseNtpClockApp::setup();
-    g_appLogLevel = _appPrefs.config.logLevel;
     
     _weatherManager = std::make_unique<TemporalAnomalyWeatherDataManager>(*this);
-
     if (_sceneManager) {
         _sceneManager->setup(scenePlaylist, numScenes);
     }
     
-    // The continuous animation is already set in the constructor.
-    
+    s_anomaly_clock.setup(&getDisplay());
     LOGINF("--- TEMPORAL ANOMALY APP SETUP COMPLETE ---");
 }
 
+// --- Main Loop (Corrected) ---
 void TemporalAnomalyClockApp::loop() {
-    BaseNtpClockApp::loop();
+    // --- FIX 2: Call the base class loop ---
+    // This runs _fsmManager->update() AND _displayManager->update().
+    // This is CRITICAL for the startup animation to run and finish.
+    BaseNtpClockApp::loop(); 
+
+    // 2. Run app-specific managers
     if (_weatherManager) _weatherManager->update();
     
-    // Ensure the clock animation is running once FSM is in the RUNNING_NORMAL state
-    if (isOkToRunScenes() && !getClock().isAnimationRunning()) {
-        resetClockAnimation();
+    // 3. Run the special anomaly logic *only when* in the normal state
+    if (isOkToRunScenes()) {
+        // If no transient animation is running (like the Matrix),
+        // update the continuous anomaly time.
+        if (!getClock().isAnimationRunning()) {
+            s_anomaly_clock.update();
+        }
     }
 }
-
-void TemporalAnomalyClockApp::resetClockAnimation() {
-    // This is called when a transient animation (like Matrix) is done or FSM enters RUNNING_NORMAL.
-    if (!getClock().isAnimationRunning()) {
-        
-        // Create a new continuous clock animation object
-        TemporalAnomalyAnimation* newAnim = new TemporalAnomalyAnimation(" %H.%M.%S", false, true);
-        
-        // --- FIX: Manually trigger setup/initialization here as well ---
-        newAnim->setup(&getDisplay());
-
-        // Store the pointer for later access (required due to -fno-rtti)
-        _continuousClockAnimation = newAnim; 
-        
-        // Set the new animation, transferring ownership to the DisplayManager
-        getClock().setAnimation(std::unique_ptr<TemporalAnomalyAnimation>(newAnim));
-    }
-}
-
 
 // --- Public Helper for Per-Minute Animation ---
 void TemporalAnomalyClockApp::triggerMatrixAnimation() {
-    
-    // Check if the current animation is running AND if the pointer is set
-    if (getClock().isAnimationRunning() && _continuousClockAnimation) {
-        
-        IAnimation* currentAnim = getClock().getCurrentAnimation();
-        
+    if (!getClock().isAnimationRunning()) {
         char textBuffer[16];
+        s_anomaly_clock.formatTime(textBuffer, sizeof(textBuffer));
+        const DisplayScene& matrixScene = scenePlaylist[0];
         
-        // Use static_cast and pointer comparison to safely access the time data
-        if (currentAnim == _continuousClockAnimation) {
-            
-            TemporalAnomalyAnimation* anomalyAnim = static_cast<TemporalAnomalyAnimation*>(currentAnim);
-            
-            anomalyAnim->formatTime(textBuffer, sizeof(textBuffer));
-
-            const DisplayScene& matrixScene = scenePlaylist[0]; 
-            
-            // Create and set the Matrix animation (this will interrupt the clock animation)
-            auto anim = std::make_unique<MatrixAnimation>(
-                textBuffer, 
-                matrixScene.anim_param_1, 
-                matrixScene.anim_param_2, 
-                matrixScene.dots_with_previous
-            );
-            getClock().setAnimation(std::move(anim));
-        }
+        auto anim = std::make_unique<MatrixAnimation>(
+            textBuffer, 
+            matrixScene.anim_param_1, 
+            matrixScene.anim_param_2, 
+            matrixScene.dots_with_previous
+        );
+        getClock().setAnimation(std::move(anim));
     }
 }
 
@@ -136,14 +104,8 @@ DisplayManager& TemporalAnomalyClockApp::getClock() {
     return *_displayManager;
 }
 
-// --- IBaseClock & IWeatherClock Interface Implementations ---
-
-void TemporalAnomalyClockApp::activateAccessPoint() {
-    _apManager.setup(getAppName());
-    String waitingMsgStr = "SETUP MODE -- WIFI ";
-    waitingMsgStr += getAppName();
-    _apManager.runBlockingLoop(*_displayManager, waitingMsgStr.c_str(), "CONNECTED - SETUP AT 192.168.4.1");
-}
+// --- (All other IBaseClock/IWeatherClock interface methods) ---
+// --- (They remain unchanged from the original file) ---
 
 float TemporalAnomalyClockApp::getTempData() { 
     return _currentWeatherData.isValid ? _currentWeatherData.temperatureF : UNSET_VALUE;
@@ -171,4 +133,11 @@ void TemporalAnomalyClockApp::syncRtcFromNtp() {
 
 const char* TemporalAnomalyClockApp::getAppName() const {
     return AP_HOST_NAME;
+}
+
+void TemporalAnomalyClockApp::activateAccessPoint() {
+    _apManager.setup(getAppName());
+    String waitingMsgStr = "SETUP MODE -- WIFI ";
+    waitingMsgStr += getAppName();
+    _apManager.runBlockingLoop(*_displayManager, waitingMsgStr.c_str(), "CONNECTED - SETUP AT 192.168.4.1");
 }

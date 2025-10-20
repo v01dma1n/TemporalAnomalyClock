@@ -21,9 +21,9 @@ class DisplayManager;
 
 #define DISP_LEN    10
 
+#define VSPI_SCLK   18
 #define VSPI_MISO   19
 #define VSPI_MOSI   23
-#define VSPI_SCLK   18
 #define VSPI_SS      5
 #define VSPI_BLANK   0
 
@@ -34,7 +34,7 @@ public:
         return instance;
     }
     
-    ~TemporalAnomalyClockApp() = default; 
+    virtual ~TemporalAnomalyClockApp(); 
 
     void setup() override;
     void loop() override;
@@ -78,7 +78,7 @@ private:
     std::unique_ptr<TemporalAnomalyWeatherDataManager> _weatherManager;
     OpenWeatherData _currentWeatherData;
 
-    TemporalAnomalyAnimation* _continuousClockAnimation = nullptr;
+    TemporalAnomalyAnimation* _continuousClockAnimation = nullptr; 
 };
 
 #endif // TEMPORAL_ANOMALY_APP_H
