@@ -1,4 +1,5 @@
 #include "debug.h"
+#include "temporal_anomaly_animation.h"
 #include "temporal_anomaly_preferences.h"
 #include <ESP32NTPClock.h>
 
@@ -20,7 +21,9 @@ void TemporalAnomalyPreferences::getPreferences() {
   prefs.getString(APP_PREF_OWM_COUNTRY_CODE, config.owm_country_code, sizeof(config.owm_country_code));
   prefs.getString(APP_PREF_TEMP_UNIT, config.tempUnit, sizeof(config.tempUnit));
 
-  config.anomalyLevel = 10; //prefs.getUInt(APP_ANOMALY_LEVEL_KEY, 0); // Default to 0 (Accurate)
+  config.anomalyLevel = 5; //prefs.getUInt(APP_ANOMALY_LEVEL_KEY, 0); // Default to 0 (Accurate)
+
+  LOGMSG(APP_LOG_DEBUG, "Prefs::getPreferences() - Hardcoded anomaly level to: %d", config.anomalyLevel);
   
   prefs.end();
 }

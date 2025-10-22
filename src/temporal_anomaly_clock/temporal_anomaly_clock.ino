@@ -18,7 +18,6 @@ QueueHandle_t frameQueue;
  */
 void displayTask(void *pvParameters) {
   // sclkPin, misoPin, mosiPin, ssPin, blankPin
-  // Pins are defined in temporal_anomaly_app.h (18, 19, 23, 5, 0)
   DispDriverMAX6921_Hardware hardwareDriver(18, 19, 23, 5, 0);
   hardwareDriver.begin();
 
@@ -40,6 +39,7 @@ void displayTask(void *pvParameters) {
 
     // 1ms delay for a 100Hz refresh rate (1ms * 10 digits)
     vTaskDelay(pdMS_TO_TICKS(1));
+    // delayMicroseconds(500);
   }
 }
 
@@ -69,6 +69,8 @@ void setup() {
   }
   Serial.println("\n>>> Starting Temporal Anomaly Clock...");
   
+  g_appLogLevel = APP_LOG_DEBUG; // Force debug level for testing
+
   serialMutex = xSemaphoreCreateMutex();
 
   // Create the frame queue

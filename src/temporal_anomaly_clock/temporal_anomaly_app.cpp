@@ -49,38 +49,59 @@ void TemporalAnomalyClockApp::setupHardware() {
 
 // --- Main Setup ---
 void TemporalAnomalyClockApp::setup() {
+    // 1. Setup preferences and log level
     _appPrefs.setup();
     g_appLogLevel = _appPrefs.config.logLevel;
 
+    // 2. Call the BASE setup engine.
+    // This correctly initializes hardware, WiFi, Time, FSM, SceneManager,
+    // and starts the unwanted StartupAnimation.
     BaseNtpClockApp::setup();
-    
+
+    // 3. IMMEDIATELY stop the animation started by the base class.
+    getClock().setAnimation(nullptr);
+
+    // 4. Setup application-specific managers
     _weatherManager = std::make_unique<TemporalAnomalyWeatherDataManager>(*this);
+
+    // 5. Ensure the SceneManager is neutered (has no playlist)
     if (_sceneManager) {
-        _sceneManager->setup(scenePlaylist, numScenes);
+        _sceneManager->setup(nullptr, 0);
     }
-    
+
+    // 6. Setup the one and only animation object for this clock
     s_anomaly_clock.setup(&getDisplay());
+    
     LOGINF("--- TEMPORAL ANOMALY APP SETUP COMPLETE ---");
+    // The FSM was already started by BaseNtpClockApp::setup()
 }
 
 // --- Main Loop (Corrected) ---
 void TemporalAnomalyClockApp::loop() {
-    // --- FIX 2: Call the base class loop ---
-    // This runs _fsmManager->update() AND _displayManager->update().
-    // This is CRITICAL for the startup animation to run and finish.
-    BaseNtpClockApp::loop(); 
+// 1. Run the FSM
+    if (_fsmManager) _fsmManager->update();
 
-    // 2. Run app-specific managers
+    // 2. Run the weather manager
     if (_weatherManager) _weatherManager->update();
     
-    // 3. Run the special anomaly logic *only when* in the normal state
+    // 3. Run the display logic BEFORE the display manager
     if (isOkToRunScenes()) {
-        // If no transient animation is running (like the Matrix),
-        // update the continuous anomaly time.
+        // If no transient animation (like Matrix) is running...
         if (!getClock().isAnimationRunning()) {
+            // ...update the continuous anomalous time display.
+            // This writes the anomalous time to the buffer.
             s_anomaly_clock.update();
         }
     }
+
+    // 4. Run the DisplayManager LAST
+    // This will:
+    // a) Run the startup/Matrix animation if one is active (overwriting the buffer).
+    // b) If no animation is active, it will just proceed.
+    // c) In ALL cases, it will grab the FINAL display buffer
+    //    (which was just updated by an anim OR s_anomaly_clock)
+    //    and send it to the displayTask queue.
+    if (_displayManager) _displayManager->update();
 }
 
 // --- Public Helper for Per-Minute Animation ---

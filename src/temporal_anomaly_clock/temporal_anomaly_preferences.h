@@ -4,8 +4,6 @@
 #include "temporal_anomaly_types.h"
 #include <base_preferences.h> 
 
-#define MAX_ANOMALY_LEVEL 11
-
 struct TemporalAnomalyConfig : public BaseConfig {
   bool showStartupAnimation;
   char owm_api_key[MAX_PREF_STRING_LEN];
