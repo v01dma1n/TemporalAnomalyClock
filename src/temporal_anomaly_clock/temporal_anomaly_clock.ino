@@ -2,6 +2,18 @@
 #include <ESP32NTPClock.h>
 #include "ESP32NTPClock_MAX6921_Hardware.h" // Must include the hardware driver
 
+// --- Task Configuration ---
+#define SERIAL_TIMEOUT_MS 2000
+#define STARTUP_DELAY_MS 300
+
+#define DISPLAY_TASK_STACK 4096
+#define DISPLAY_TASK_PRIO 10
+#define DISPLAY_TASK_CORE 1
+
+#define ANIM_TASK_STACK 16384
+#define ANIM_TASK_PRIO 5
+#define ANIM_TASK_CORE 0
+
 SemaphoreHandle_t serialMutex = NULL;
 AppLogLevel g_appLogLevel = APP_LOG_INFO;
 TemporalAnomalyClockApp& app = TemporalAnomalyClockApp::getInstance();
@@ -18,7 +30,13 @@ QueueHandle_t frameQueue;
  */
 void displayTask(void *pvParameters) {
   // sclkPin, misoPin, mosiPin, ssPin, blankPin
-  DispDriverMAX6921_Hardware hardwareDriver(18, 19, 23, 5, 0);
+  DispDriverMAX6921_Hardware hardwareDriver(
+      VSPI_SCLK, 
+      VSPI_MISO, 
+      VSPI_MOSI, 
+      VSPI_SS, 
+      VSPI_BLANK
+  );
   hardwareDriver.begin();
 
   DisplayFrame localFrame;
@@ -86,23 +104,23 @@ void setup() {
 
   // Create the high-priority display task on CORE 1
   xTaskCreatePinnedToCore(
-      displayTask,      // Task function
-      "DisplayTask",    // Name for debugging
-      4096,             // Stack size
-      NULL,             // Task input parameter
-      10,               // Priority (high)
-      NULL,             // Task handle
-      1);               // Core ID
+      displayTask,        // Task function
+      "DisplayTask",      // Name for debugging
+      DISPLAY_TASK_STACK, // Stack size
+      NULL,               // Task input parameter
+      DISPLAY_TASK_PRIO,  // Priority (high)
+      NULL,               // Task handle
+      DISPLAY_TASK_CORE); // Core ID
 
   // Create the lower-priority application task on CORE 0
   xTaskCreatePinnedToCore(
       animationTask,    // Task function
       "AnimationTask",  // Name for debugging
-      16384,            // Stack size (Increased for WiFi/app logic)
+      ANIM_TASK_STACK,  // Stack size (Increased for WiFi/app logic)
       NULL,             // Task input parameter
-      5,                // Priority (normal)
+      ANIM_TASK_PRIO,   // Priority (normal)
       NULL,             // Task handle
-      0);               // Core ID
+      ANIM_TASK_CORE);  // Core ID
 
   Serial.println("\n>>> ... setup complete, tasks running");
 }

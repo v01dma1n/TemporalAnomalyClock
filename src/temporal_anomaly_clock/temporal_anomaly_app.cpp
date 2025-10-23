@@ -107,7 +107,7 @@ void TemporalAnomalyClockApp::loop() {
 // --- Public Helper for Per-Minute Animation ---
 void TemporalAnomalyClockApp::triggerMatrixAnimation() {
     if (!getClock().isAnimationRunning()) {
-        char textBuffer[16];
+        char textBuffer[DISPLAY_BUFFER_SIZE];
         s_anomaly_clock.formatTime(textBuffer, sizeof(textBuffer));
         const DisplayScene& matrixScene = scenePlaylist[0];
         
@@ -160,5 +160,10 @@ void TemporalAnomalyClockApp::activateAccessPoint() {
     _apManager.setup(getAppName());
     String waitingMsgStr = "SETUP MODE -- WIFI ";
     waitingMsgStr += getAppName();
-    _apManager.runBlockingLoop(*_displayManager, waitingMsgStr.c_str(), "CONNECTED - SETUP AT 192.168.4.1");
+
+    // Use the actual Soft AP IP
+    String connectedMsgStr = "CONNECT AT ";
+    connectedMsgStr += WiFi.softAPIP().toString();
+
+    _apManager.runBlockingLoop(*_displayManager, waitingMsgStr.c_str(), connectedMsgStr.c_str());
 }

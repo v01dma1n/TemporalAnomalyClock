@@ -77,24 +77,27 @@ void TemporalAnomalyAnimation::triggerNewAnomalyTarget() {
     LOGMSG(APP_LOG_DEBUG,"[Trigger] Initial _targetAnomalyDeviation: %.1f", _targetAnomalyDeviation);
 
     // --- (Near-zero check remains the same) ---
-    if (fabsf(_targetAnomalyDeviation) < 0.1f && anomalyLevel > 0) {
+    if (fabsf(_targetAnomalyDeviation) < TARGET_DEVIATION_ZERO_TOLERANCE && anomalyLevel > 0) {
         // ...
     }
 
     // --- (Transition duration calculation remains the same) ---
-    int minT = 3;
-    int maxT = 5;
-    if (anomalyLevel > 7) { minT = 5; maxT = 10; }
+    int minT = MIN_TRANSITION_SEC;
+    int maxT = MAX_TRANSITION_SEC;
+    if (anomalyLevel > HIGH_ANOMALY_THRESHOLD) {
+        minT = HIGH_ANOMALY_MIN_TRANS_SEC; 
+        maxT = HIGH_ANOMALY_MAX_TRANS_SEC; 
+    }
     _transitionDuration_ms = random(minT, maxT + 1) * 1000;
 
     // Random between 1-5 seconds.
     // We can ignore the level adjustment for now, or add a smaller one.
     // Let's just do a simple 1-5 second random hold.
-    int baseHoldSec = random(1, 6); // random(min, max) -> min to max-1, so use 6 for 1-5
+    int baseHoldSec = random(MIN_HOLD_SEC, MAX_HOLD_SEC); // random(min, max) -> min to max-1, so use 6 for 1-5
     _holdDuration_ms = baseHoldSec * 1000;
 
-    if (anomalyLevel > 0 && anomalyLevel != MAX_RANDOM_LEVEL && _transitionDuration_ms < 1000) {
-        _transitionDuration_ms = 1000; // Force at least 1 second transition
+    if (anomalyLevel > 0 && anomalyLevel != MAX_RANDOM_LEVEL && _transitionDuration_ms < MIN_TRANSITION_MS) {
+        _transitionDuration_ms = MIN_TRANSITION_MS; // Force at least 1 second transition
         LOGDBG("[Trigger] Forcing minimum transition duration to 1s");
     }
 
@@ -108,7 +111,7 @@ void TemporalAnomalyAnimation::updateAnomalousTime() {
     unsigned long now_ms = millis();
     time_t realEpoch = time(nullptr);
     int anomalyLevel = getNonLinearitySetting();
-    bool isTimeValid = (realEpoch >= 1700000000); // Check validity once
+    bool isTimeValid = (realEpoch >= MIN_VALID_EPOCH); // Check validity once
 
     static bool wasTimeValidLast = false; // Track validity across calls
     static time_t last_real_log_epoch = 0;
@@ -157,7 +160,7 @@ void TemporalAnomalyAnimation::updateAnomalousTime() {
             _targetAnomalyDeviation = NAN;
 
         } else if (anomalyLevel == 0) {
-            if (fabsf(_currentAnomalyDeviation) > 0.01f) {
+            if (fabsf(_currentAnomalyDeviation) > CURRENT_DEVIATION_ZERO_TOLERANCE) {
                  LOGDBG("AnomalyAnim::updateAnomalousTime() - Anomaly level 0 detected, resetting deviation.");
             }
             _currentAnomalyDeviation = 0.0f;
@@ -188,7 +191,9 @@ void TemporalAnomalyAnimation::updateAnomalousTime() {
     // --- Calculate final epoch (only if not Level 11 and deviation is valid) ---
     // Use the potentially invalid realEpoch if necessary
     if (anomalyLevel != MAX_RANDOM_LEVEL && !isnan(_currentAnomalyDeviation)) {
-         float clampedDeviation = std::max(-((float)realEpoch - 10), std::min((float)(0xFFFFFFFF - realEpoch - 10), _currentAnomalyDeviation));
+         float clampedDeviation = std::max(-((float)realEpoch - EPOCH_CLAMP_BUFFER), 
+                                           -std::min((float)(0xFFFFFFFF - realEpoch - EPOCH_CLAMP_BUFFER), 
+                                           _currentAnomalyDeviation));
          _anomalousEpoch = realEpoch + (time_t)roundf(clampedDeviation);
          localtime_r(&_anomalousEpoch, &_anomalousTime); // Use calculated epoch
     } else if (anomalyLevel != MAX_RANDOM_LEVEL) {
@@ -230,7 +235,7 @@ void TemporalAnomalyAnimation::update() {
 
     updateAnomalousTime();
 
-    char txt[16];
+    char txt[DISPLAY_BUFFER_SIZE];
     formatTime(txt, sizeof(txt));
 
     LOGDBG("AnomalyAnim::update() - Buffer Write: '%s'", txt);

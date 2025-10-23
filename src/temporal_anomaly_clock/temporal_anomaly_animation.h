@@ -7,12 +7,32 @@
 #include <Preferences.h>
 
 #define ANOMALY_LEVEL_KEY "anomaly_level"
+
 #define ANIMATION_FPS 20               
+#define DISPLAY_BUFFER_SIZE 16 // For char txt[16]
+
 #define MAX_ANOMALY_LEVEL 10 // Levels 1-10 control deviation magnitude
 #define MAX_RANDOM_LEVEL 11  // Level 11 triggers full random time
 #define MAX_ANOMALY_SECONDS 60 // Max deviation at level 10
 #define MAX_ANOMALY_SPEED 5.0f // Max deviation change per second (e.g., 5.0 seconds/second)
 
+// Anomaly transition/hold timing
+#define MIN_TRANSITION_SEC 3
+#define MAX_TRANSITION_SEC 5
+#define HIGH_ANOMALY_THRESHOLD 7 // Level above which transitions are slower
+#define HIGH_ANOMALY_MIN_TRANS_SEC 5
+#define HIGH_ANOMALY_MAX_TRANS_SEC 10
+#define MIN_HOLD_SEC 1
+#define MAX_HOLD_SEC 5 // Will give 1-5 second hold
+#define MIN_TRANSITION_MS 1000
+
+// Tolerances
+#define TARGET_DEVIATION_ZERO_TOLERANCE 0.1f
+#define CURRENT_DEVIATION_ZERO_TOLERANCE 0.01f
+
+// A known "good" time to validate NTP sync (Jan 1, 2024)
+#define MIN_VALID_EPOCH 1704067200UL
+#define EPOCH_CLAMP_BUFFER 10
 
 class TemporalAnomalyAnimation : public IAnimation {
 public:
