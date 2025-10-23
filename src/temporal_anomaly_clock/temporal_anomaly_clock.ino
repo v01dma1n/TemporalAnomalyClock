@@ -87,8 +87,6 @@ void setup() {
   }
   Serial.println("\n>>> Starting Temporal Anomaly Clock...");
   
-  g_appLogLevel = APP_LOG_DEBUG; // Force debug level for testing
-
   serialMutex = xSemaphoreCreateMutex();
 
   // Create the frame queue

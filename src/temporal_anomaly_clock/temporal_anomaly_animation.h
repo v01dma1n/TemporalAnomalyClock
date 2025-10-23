@@ -6,15 +6,12 @@
 #include <time.h>
 #include <Preferences.h>
 
-#define ANOMALY_LEVEL_KEY "anomaly_level"
-
 #define ANIMATION_FPS 20               
 #define DISPLAY_BUFFER_SIZE 16 // For char txt[16]
 
 #define MAX_ANOMALY_LEVEL 10 // Levels 1-10 control deviation magnitude
 #define MAX_RANDOM_LEVEL 11  // Level 11 triggers full random time
 #define MAX_ANOMALY_SECONDS 60 // Max deviation at level 10
-#define MAX_ANOMALY_SPEED 5.0f // Max deviation change per second (e.g., 5.0 seconds/second)
 
 // Anomaly transition/hold timing
 #define MIN_TRANSITION_SEC 3

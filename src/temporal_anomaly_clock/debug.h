@@ -7,7 +7,6 @@
 extern SemaphoreHandle_t serialMutex;
 extern AppLogLevel g_appLogLevel;
 
-/*
 #define LOGMSG(level, format, ...) \
     do { \
         if (g_appLogLevel >= level) { \
@@ -16,12 +15,6 @@ extern AppLogLevel g_appLogLevel;
                 xSemaphoreGive(serialMutex); \
             } \
         } \
-    } while (0)
-*/
-#define LOGMSG(level, format, ...) \
-    do { \
-        /* TEMPORARY: Bypass level check and mutex */ \
-        Serial.printf(format "\n", ##__VA_ARGS__); \
     } while (0)
 
 #define LOGERR(format, ...) LOGMSG(APP_LOG_ERROR, format, ##__VA_ARGS__)
