@@ -1,4 +1,5 @@
 #include "temporal_anomaly_app.h"
+#include "vfd_hardware_map.h"
 #include <ESP32NTPClock.h>
 #include "ESP32NTPClock_MAX6921_Hardware.h" // Must include the hardware driver
 
@@ -22,21 +23,6 @@ TemporalAnomalyClockApp& app = TemporalAnomalyClockApp::getInstance();
 #define DISPLAY_DIGITS 10
 typedef unsigned long DisplayFrame[DISPLAY_DIGITS];
 QueueHandle_t frameQueue;
-
-static const unsigned long VFD_GRIDS[] = {
-    0b00000000010000000000, // GRD_01 (Digit 0)
-    0b00000000100000000000, // GRD_02 (Digit 1)
-    0b00000010000000000000, // GRD_03 (Digit 2)
-    0b00010000000000000000, // GRD_04 (Digit 3)
-    0b10000000000000000000, // GRD_05 (Digit 4)
-    0b00000000000000000010, // GRD_06 (Digit 5)
-    0b00000000000000000100, // GRD_07 (Digit 6)
-    0b00000000000000100000, // GRD_08 (Digit 7)
-    0b00000000000100000000, // GRD_09 (Digit 8)
-    0b00000000001000000000  // GRD_10 (Digit 9)
-};
-static const int VFD_DIGIT_COUNT = sizeof(VFD_GRIDS) / sizeof(VFD_GRIDS[0]);
-
 
 /**
  * @brief High-priority task to handle display multiplexing (CONSUMER).
@@ -68,7 +54,7 @@ void displayTask(void *pvParameters) {
     hardwareDriver.writeDigit(currentDigit, localFrame[currentDigit]);
 
     // Move to the next digit
-    currentDigit = (currentDigit + 1) % DISPLAY_DIGITS;
+    currentDigit = (currentDigit + 1) % VFD_DIGIT_COUNT;
 
     // 1ms delay for a 100Hz refresh rate (1ms * 10 digits)
     vTaskDelay(pdMS_TO_TICKS(1));

@@ -4,12 +4,17 @@
 #include "version.h"             
 #include <Wire.h> 
 #include "anim_matrix.h" 
+#include "default_7seg_font.h" 
+#include "seven_segment_map.h"
+#include "vfd_hardware_map.h"
 #include "temporal_anomaly_animation.h" // Still required for logic definition
 #include <algorithm> 
 #include <memory> 
 
 // Global object to manage the permanent anomaly state
 static TemporalAnomalyAnimation s_anomaly_clock(" %H.%M.%S", false, true);
+
+static Default7SegFont s_vfd_font;
 
 // --- Data getters for the scene playlist ---
 float TemporalAnomalyClockApp_getTimeData() { return 0; }
@@ -25,7 +30,7 @@ static const int numScenes = sizeof(scenePlaylist) / sizeof(DisplayScene);
 // --- Constructor ---
 TemporalAnomalyClockApp::TemporalAnomalyClockApp() :
     // --- FIX 1: Use the 1-argument (buffer-only) constructor ---
-    _display(DISP_LEN),
+    _display(DISP_LEN, s_vfd_font, s_vfd_segment_map),
     _appPrefs(),
     _apManager(_appPrefs)
 {

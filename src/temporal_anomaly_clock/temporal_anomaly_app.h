@@ -21,12 +21,6 @@ class DisplayManager;
 
 #define DISP_LEN    10
 
-#define VSPI_SCLK   18
-#define VSPI_MISO   19
-#define VSPI_MOSI   23
-#define VSPI_SS      5
-#define VSPI_BLANK   0
-
 class TemporalAnomalyClockApp : public BaseNtpClockApp, public IWeatherClock {
 public:
     static TemporalAnomalyClockApp& getInstance() {
