@@ -1,0 +1,4 @@
+{
+    "board": "esp32:esp32:esp32_family",
+    "sketch": "src/temporal_anomaly_clock/temporal_anomaly_clock.ino"
+}

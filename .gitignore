@@ -1,0 +1,9 @@
+*~
+*.gcode
+*.src
+*.*~
+*.sh
+*.ini
+*.checksum
+*.hidden
+
