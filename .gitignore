@@ -6,4 +6,9 @@
 *.ini
 *.checksum
 *.hidden
+*.code-workspace
+/.vscode/
 
+/build/
+/managed_components/
+/.cache/

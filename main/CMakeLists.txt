@@ -1,0 +1,18 @@
+# temporal_anomaly_clock app.
+
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "temporal_anomaly_app.cpp"
+        "temporal_anomaly_preferences.cpp"
+        "temporal_anomaly_access_point_manager.cpp"
+        "disp_driver_gc9a01_round_clock.cpp"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp32_ntp_clock
+        nvs_flash
+        driver
+)
+
+target_compile_options(${COMPONENT_LIB} PUBLIC -std=gnu++17)

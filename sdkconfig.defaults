@@ -1,0 +1,63 @@
+# temporal_anomaly_clock sdkconfig defaults.
+# Apply with: idf.py reconfigure (first build picks them up automatically).
+# Adapted from MoodWhisperer's sdkconfig.defaults for the ESP32-C3 (single
+# core) + round GC9A01/LVGL display instead of MoodWhisperer's dual-core
+# ESP32-WROOM + VFD.
+
+# --- Target ------------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32c3"
+
+# --- Flash size ----------------------------------------------------------
+# The board's chip reports 4MB (confirmed via boot log on the incubator
+# project — the default 2MB binary-header assumption undersold it). A
+# custom partition table gives the full ESP32NTPClock2 + ESP32WiFi2 +
+# LVGL + esp_lcd_gc9a01 + captive-portal firmware room to fit (the default
+# single 1MB factory partition overflowed by ~400KB on first build) with
+# headroom to grow.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions/partitions.csv"
+
+# --- HTTP server ---------------------------------------------------------
+# Captive portal needs a generous URI length for the POST of all form fields.
+CONFIG_HTTPD_MAX_URI_LEN=1024
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# --- SNTP ------------------------------------------------------------------
+CONFIG_LWIP_SNTP_MAX_SERVERS=3
+
+# --- FreeRTOS tick rate ------------------------------------------------------
+# 1 kHz tick gives millisecond-granular timing for the watch face's hand
+# sweep and the engine's animations.
+CONFIG_FREERTOS_HZ=1000
+
+# --- FreeRTOS stack overflow detection ---------------------------------------
+# Method 2 (canary pattern) — when a task overflows, the panic handler names
+# the offending task instead of leaving us to guess from a corrupted IRET.
+CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY=y
+CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y
+
+# --- ISR / idle task stack ---------------------------------------------------
+# MoodWhisperer hit repeated ISR/idle-stack overflows on a dual-core ESP32
+# from WiFi interrupt chains during AP-portal + STA-connect activity (see
+# its CLAUDE.md "Resolved" section). The C3 is single-core so the exact
+# dual-core failure mode doesn't apply, but we're also running a WiFi AP
+# portal here — keep the same conservative bump as cheap insurance.
+CONFIG_FREERTOS_ISR_STACKSIZE=4096
+CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=4096
+
+# --- FreeRTOS task trace / watermark logging ---------------------------------
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
+
+# --- C++ ---------------------------------------------------------------------
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+# Compile debug-level logging in (runtime default stays INFO).
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+
+# --- LVGL --------------------------------------------------------------------
+# Needed by the watch face's digital readout (confirmed working in the
+# gc9a01_round_display_test incubator project).
+CONFIG_LV_FONT_MONTSERRAT_24=y
