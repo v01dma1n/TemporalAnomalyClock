@@ -1,4 +1,5 @@
 #include "disp_driver_gc9a01_round_clock.h"
+#include "version.h"
 
 #include "esp_log.h"
 #include "esp_lcd_panel_vendor.h"
@@ -41,6 +42,8 @@ static const char* TAG = "disp_gc9a01";
 #define TIME_DIGIT_W 20
 #define TIME_COLON_W 8
 #define TIME_ROW_Y   60
+
+static lv_color_t copperColor() { return lv_color_hex(0xB87333); }
 
 DispDriverGc9a01RoundClock::DispDriverGc9a01RoundClock() {
     std::memset(_statusBuf, 0, sizeof(_statusBuf));
@@ -168,12 +171,15 @@ void DispDriverGc9a01RoundClock::buildUi() {
     lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ring, 2, 0);
-    lv_obj_set_style_border_color(ring, lv_color_white(), 0);
+    lv_obj_set_style_border_color(ring, copperColor(), 0);
 
-    // hour tick marks
+    // hour tick marks — 12/3/6/9 (cardinal) drawn thicker and longer than
+    // the other 8
     for (int i = 0; i < 12; i++) {
+        bool cardinal = (i % 3 == 0);
         float rad = i * 30.0f * ((float)M_PI / 180.0f);
-        int16_t r_out = 112, r_in = 98;
+        int16_t r_out = cardinal ? 114 : 112;
+        int16_t r_in = cardinal ? 92 : 98;
         static lv_point_precise_t tick_pts[12][2];
         tick_pts[i][0].x = CLOCK_CENTER_X + (int16_t)(r_out * sinf(rad));
         tick_pts[i][0].y = CLOCK_CENTER_Y - (int16_t)(r_out * cosf(rad));
@@ -184,12 +190,29 @@ void DispDriverGc9a01RoundClock::buildUi() {
         lv_obj_set_pos(tick, 0, 0);
         lv_obj_set_size(tick, LCD_H_RES, LCD_V_RES);
         lv_line_set_points(tick, tick_pts[i], 2);
-        lv_obj_set_style_line_width(tick, 3, 0);
-        lv_obj_set_style_line_color(tick, lv_color_white(), 0);
+        lv_obj_set_style_line_width(tick, cardinal ? 5 : 3, 0);
+        lv_obj_set_style_line_color(tick, copperColor(), 0);
     }
 
-    _hourHand = createHand(_faceScreen, 6, lv_color_white());
-    _minHand = createHand(_faceScreen, 4, lv_color_white());
+    // Brand text (author + year from version.h), placed between the ticks
+    // and the hands so painter's-order z-order puts the hands on top —
+    // LVGL draws each screen's children in add order, later = on top.
+    lv_obj_t* brandLabel = lv_label_create(_faceScreen);
+    lv_obj_set_style_text_font(brandLabel, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(brandLabel, lv_color_white(), 0);
+    lv_label_set_text(brandLabel, APP_AUTHOR);
+    lv_obj_align(brandLabel, LV_ALIGN_CENTER, 0, -46);
+
+    char yearBuf[5];
+    snprintf(yearBuf, sizeof(yearBuf), "%.4s", APP_DATE); // APP_DATE is "YYYY-MM-DD"
+    lv_obj_t* yearLabel = lv_label_create(_faceScreen);
+    lv_obj_set_style_text_font(yearLabel, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(yearLabel, lv_color_white(), 0);
+    lv_label_set_text(yearLabel, yearBuf);
+    lv_obj_align(yearLabel, LV_ALIGN_CENTER, 0, -28);
+
+    _hourHand = createHand(_faceScreen, 6, copperColor());
+    _minHand = createHand(_faceScreen, 4, copperColor());
     _secHand = createHand(_faceScreen, 3, lv_palette_main(LV_PALETTE_RED));
 
     // center hub, drawn last so it sits above the hands

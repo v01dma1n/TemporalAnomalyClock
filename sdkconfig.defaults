@@ -58,6 +58,8 @@ CONFIG_COMPILER_CXX_RTTI=n
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
 
 # --- LVGL --------------------------------------------------------------------
-# Needed by the watch face's digital readout (confirmed working in the
-# gc9a01_round_display_test incubator project).
+# 24: digital readout (confirmed working in the gc9a01_round_display_test
+# incubator project). 12: smaller "year" line under the brand text on the
+# watch face; 14 (brand text itself) is LVGL's compiled-in default already.
 CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
