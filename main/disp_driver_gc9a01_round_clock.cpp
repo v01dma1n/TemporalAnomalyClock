@@ -127,15 +127,46 @@ void DispDriverGc9a01RoundClock::begin() {
 
 // --- UI construction ---------------------------------------------------------
 
-// Creates the 3 line objects for one tapered hand (base/mid/tip).
-// widths[i] is used for segs[i] — see setTaperedHand() for how the
-// segments are positioned along the hand each tick.
-static void createTaperedHand(lv_obj_t* parent, lv_obj_t* segs[3],
-                               const int16_t widths[3], lv_color_t color) {
-    for (int i = 0; i < 3; i++) {
+// Fills out[0..count-1] with a linear interpolation from `from` to `to`
+// (inclusive at both ends). Used for both the width and radius-boundary
+// ramps below.
+static void fillIntRamp(int16_t out[], int count, int16_t from, int16_t to) {
+    for (int i = 0; i < count; i++) {
+        out[i] = (int16_t)(from + (int32_t)(to - from) * i / (count - 1));
+    }
+}
+
+// Fills out[0..count-1] with a color ramp from `from` to `to` using
+// lv_color_mix() (mix=255 -> full first arg, 0 -> full second arg) instead
+// of hand-picked hex stops, so the segment count can change without
+// re-deriving intermediate colors by hand.
+static void fillColorRamp(lv_color_t out[], int count, lv_color_t from, lv_color_t to) {
+    for (int i = 0; i < count; i++) {
+        uint8_t mix = (uint8_t)(255 * (count - 1 - i) / (count - 1));
+        out[i] = lv_color_mix(from, to, mix);
+    }
+}
+
+// Fills out[0..segCount] with the segCount+1 radius boundaries (0 to
+// total_len) that split a hand of length total_len into segCount equal
+// segments — see setTaperedHand().
+static void fillRadii(int16_t out[], int segCount, int16_t total_len) {
+    for (int i = 0; i <= segCount; i++) {
+        out[i] = (int16_t)((int32_t)total_len * i / segCount);
+    }
+}
+
+// Creates the `count` line objects for one tapered hand (base -> tip).
+// widths[i]/colors[i] are used for segs[i] — see setTaperedHand() for how
+// the segments are positioned along the hand each tick. A plain lv_line
+// stroke can't have a smooth gradient along its length, so colors[] fakes
+// one with `count` discrete shades, same trick as the width taper.
+static void createTaperedHand(lv_obj_t* parent, lv_obj_t* segs[],
+                               const int16_t widths[], const lv_color_t colors[], int count) {
+    for (int i = 0; i < count; i++) {
         segs[i] = lv_line_create(parent);
         lv_obj_set_style_line_width(segs[i], widths[i], 0);
-        lv_obj_set_style_line_color(segs[i], color, 0);
+        lv_obj_set_style_line_color(segs[i], colors[i], 0);
         lv_obj_set_style_line_rounded(segs[i], true, 0);
     }
 }
@@ -249,13 +280,23 @@ void DispDriverGc9a01RoundClock::buildUi() {
     lv_obj_align(yearLabel, LV_ALIGN_CENTER, 0, -28);
 
     // widths taper base -> mid -> tip; see setTaperedHand() for the
-    // matching radius breakpoints used each tick
-    static constexpr int16_t kHourWidths[3] = {8, 5, 3};
-    static constexpr int16_t kMinWidths[3] = {6, 4, 2};
-    static constexpr int16_t kSecWidths[3] = {3, 2, 1};
-    createTaperedHand(_faceScreen, _hourSegs, kHourWidths, copperColor());
-    createTaperedHand(_faceScreen, _minSegs, kMinWidths, copperColor());
-    createTaperedHand(_faceScreen, _secSegs, kSecWidths, lv_palette_main(LV_PALETTE_RED));
+    // matching radius breakpoints used each tick. Widths and colors ramp
+    // base -> tip in kHandSegs steps, simulating light catching a
+    // beveled/polished metal hand (darker+narrower near the hub,
+    // brighter+narrower toward the tip).
+    int16_t hourWidths[kHandSegs], minWidths[kHandSegs], secWidths[kHandSegs];
+    fillIntRamp(hourWidths, kHandSegs, 8, 3);
+    fillIntRamp(minWidths, kHandSegs, 6, 2);
+    fillIntRamp(secWidths, kHandSegs, 3, 1);
+
+    lv_color_t hourColors[kHandSegs], minColors[kHandSegs], secColors[kHandSegs];
+    fillColorRamp(hourColors, kHandSegs, lv_color_hex(0x8A5A28), lv_color_hex(0xE0A868));
+    fillColorRamp(minColors, kHandSegs, lv_color_hex(0x8A5A28), lv_color_hex(0xE0A868));
+    fillColorRamp(secColors, kHandSegs, lv_color_hex(0x8B0000), lv_color_hex(0xFF6659));
+
+    createTaperedHand(_faceScreen, _hourSegs, hourWidths, hourColors, kHandSegs);
+    createTaperedHand(_faceScreen, _minSegs, minWidths, minColors, kHandSegs);
+    createTaperedHand(_faceScreen, _secSegs, secWidths, secColors, kHandSegs);
 
     // center hub, drawn last so it sits above the hands
     lv_obj_t* hub = lv_obj_create(_faceScreen);
@@ -325,12 +366,12 @@ static void setHandSeg(lv_obj_t* seg, lv_point_precise_t* pts, float angle_deg,
     lv_line_set_points(seg, pts, 2);
 }
 
-// Updates all 3 segments of a tapered hand. radii = {r0, r1, r2, r3}, the
-// 4 boundary radii for the 3 segments (base: r0->r1, mid: r1->r2, tip:
-// r2->r3) — r0 is normally 0 (the hub).
-static void setTaperedHand(lv_obj_t* segs[3], lv_point_precise_t segPts[3][2],
-                            float angle_deg, const int16_t radii[4]) {
-    for (int i = 0; i < 3; i++) {
+// Updates all `count` segments of a tapered hand. radii has count+1
+// boundary radii (segment i runs radii[i] -> radii[i+1]) — radii[0] is
+// normally 0 (the hub). See fillRadii() for how these are generated.
+static void setTaperedHand(lv_obj_t* segs[], lv_point_precise_t segPts[][2],
+                            float angle_deg, const int16_t radii[], int count) {
+    for (int i = 0; i < count; i++) {
         setHandSeg(segs[i], segPts[i], angle_deg, radii[i], radii[i + 1]);
     }
 }
@@ -389,14 +430,16 @@ void DispDriverGc9a01RoundClock::tickWatchFace() {
 
     // Hands always run, regardless of what the info row below is showing —
     // they're the "at a glance" clock and shouldn't disappear while the
-    // rotation is on temperature/humidity. Radius breakpoints match the
-    // widths given to createTaperedHand() in buildUi().
-    static constexpr int16_t kHourRadii[4] = {0, 20, 40, HOUR_HAND_LEN};
-    static constexpr int16_t kMinRadii[4] = {0, 32, 62, MIN_HAND_LEN};
-    static constexpr int16_t kSecRadii[4] = {0, 30, 65, SEC_HAND_LEN};
-    setTaperedHand(_hourSegs, _hourSegPts, h * 30.0f + m * 0.5f, kHourRadii);
-    setTaperedHand(_minSegs, _minSegPts, m * 6.0f + (float)s * 0.1f, kMinRadii);
-    setTaperedHand(_secSegs, _secSegPts, (float)s * 6.0f, kSecRadii);
+    // rotation is on temperature/humidity. Radius boundaries are cheap to
+    // recompute every tick (a handful of integer divides) rather than
+    // worth caching as members.
+    int16_t hourRadii[kHandSegs + 1], minRadii[kHandSegs + 1], secRadii[kHandSegs + 1];
+    fillRadii(hourRadii, kHandSegs, HOUR_HAND_LEN);
+    fillRadii(minRadii, kHandSegs, MIN_HAND_LEN);
+    fillRadii(secRadii, kHandSegs, SEC_HAND_LEN);
+    setTaperedHand(_hourSegs, _hourSegPts, h * 30.0f + m * 0.5f, hourRadii, kHandSegs);
+    setTaperedHand(_minSegs, _minSegPts, m * 6.0f + (float)s * 0.1f, minRadii, kHandSegs);
+    setTaperedHand(_secSegs, _secSegPts, (float)s * 6.0f, secRadii, kHandSegs);
 
     // Info row: cycles time -> temperature -> humidity -> time. Skips
     // temperature/humidity entirely (stays on TIME) until a weather

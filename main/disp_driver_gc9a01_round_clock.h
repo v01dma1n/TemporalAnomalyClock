@@ -85,10 +85,13 @@ private:
     lv_obj_t* _faceScreen = nullptr;
 
     // Watch face objects/state (see gc9a01_round_display_test for the
-    // rendering approach these mirror). Each hand is drawn as 3 stacked
-    // line segments of decreasing width (base/mid/tip) for a tapered
-    // "sword hand" look — a plain lv_line can't taper a single stroke.
-    static constexpr int kHandSegs = 3;
+    // rendering approach these mirror). Each hand is drawn as kHandSegs
+    // stacked line segments of decreasing width and a color ramp (via
+    // lv_color_mix()) for a tapered "sword hand" look with a smooth-ish
+    // gradient — a plain lv_line can't taper or gradient a single stroke.
+    // 6 segments (rather than the original 3) to make the color/width
+    // steps small enough that the banding isn't obviously visible.
+    static constexpr int kHandSegs = 6;
     lv_obj_t* _hourSegs[kHandSegs] = {};
     lv_obj_t* _minSegs[kHandSegs] = {};
     lv_obj_t* _secSegs[kHandSegs] = {};
