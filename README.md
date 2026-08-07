@@ -149,6 +149,54 @@ sync, logs, preferences, `time()`) is untouched.
 
 ---
 
+## Chaos anomaly levels
+
+A second, independent perturbation layered additively on top of the
+sinusoidal wobble above. Unlike that system, chaos mode makes **no**
+accuracy guarantee — it's a damped random walk, not a periodic
+function:
+
+- occasional random "kicks" to a velocity, with probability and
+  magnitude both scaling with level (so low levels stutter rarely,
+  high levels kick often and hard), hard-capped so a run of
+  same-direction kicks can't accumulate into runaway speed;
+- weak mean-reversion pulling that velocity back toward zero — more
+  weakly at higher levels, so excursions last longer as the level
+  increases;
+- a gentle spring pulling the accumulated offset back toward real
+  time, so even at max chaos the clock stays roughly near real time
+  over long periods without any hard guarantee.
+
+Configurable in the portal:
+
+- **Anomaly chaos level (0-11)** — 0 off, 1-3 subtle speed variations
+  and occasional skips/repeats, 4-7 noticeable accelerations/
+  decelerations/short reversals, 8-10 extreme and largely
+  unpredictable speed changes, 11 fully random — the displayed second
+  is re-rolled to a random 0-59 value once per real elapsed second
+  (hour/minute keep tracking real time; only the second progression
+  goes chaotic).
+
+Both perturbation systems only affect the watch-face rendering, same
+as the sinusoidal wobble — real system time is never touched.
+
+### Why the hands are flat, not tapered
+
+The hands were originally drawn as 6 stacked line segments per hand
+(18 total) to fake a tapered width + color gradient — `lv_line` can't
+taper or gradient a single stroke natively. Under fast chaos motion
+this became a real bottleneck: measurement showed LVGL ticks meant to
+fire every 30ms were arriving 150-300ms late *even at chaos level 0*,
+meaning the redraw cost is a constant per-tick problem that's simply
+invisible when the hand barely moves between frames. Neither raising
+the SPI clock (20→40MHz) nor disabling the dial's live gradient
+background changed this — cutting the segment count from 6 to 1 per
+hand did, roughly 3x. Hands are now a single flat-color segment each;
+this MCU/display combo has a real throughput ceiling well under the
+30Hz the tick timer assumes.
+
+---
+
 ## Weather
 
 Pulls current temperature (°F) and relative humidity from
@@ -234,10 +282,11 @@ wobble settings, save.
   (`clock_fsm_manager.cpp`, `NTP_SYNC` case). Not yet reproduced on this
   project, but worth knowing if the clock ever seems to bounce back to
   setup mode unexpectedly on a flaky network.
-- The "anomaly level" concept from the original Arduino app's
-  preferences was dead code there (stored but never actually read) — it
-  was not ported. The real wobble effect (period/amplitude, above) is a
-  new implementation, not a revival of that setting.
+- The "anomaly level" field in the original Arduino app's preferences
+  was dead code there (stored but never actually read). The chaos
+  levels feature (above) reuses the name but is a from-scratch
+  implementation with real behavior behind it, not a revival of that
+  old field.
 
 ---
 
