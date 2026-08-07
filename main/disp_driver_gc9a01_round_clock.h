@@ -63,6 +63,13 @@ public:
     // the hands run backwards for part of each cycle.
     void setAnomalyParams(double periodSec, double amplitude);
 
+    // Chaos anomaly level, independent of setAnomalyParams()'s sinusoidal
+    // wobble (both apply additively — see tickChaos()). 0 = off, 1-11
+    // increasing volatility, 11 = fully random seconds. Clamped to [0,11].
+    // Unlike the sinusoidal wobble, this does NOT guarantee any particular
+    // long-run accuracy.
+    void setAnomalyLevel(int level);
+
     // Feeds the latest weather reading in for the temperature/humidity face
     // rotation. Safe to call every app loop() tick; only used when valid.
     void setWeatherData(float tempF, int humidity, bool valid);
@@ -75,6 +82,7 @@ private:
     static void tickTimerCb(lv_timer_t* timer);
     double anomalyDisplayTime(double real_sec) const;
     void updateFaceModeVisibility();
+    void tickChaos(double dt_sec);
 
     char _statusBuf[kStatusCells + 1] = {};
     bool _began = false;
@@ -86,12 +94,17 @@ private:
 
     // Watch face objects/state (see gc9a01_round_display_test for the
     // rendering approach these mirror). Each hand is drawn as kHandSegs
-    // stacked line segments of decreasing width and a color ramp (via
-    // lv_color_mix()) for a tapered "sword hand" look with a smooth-ish
-    // gradient — a plain lv_line can't taper or gradient a single stroke.
-    // 6 segments (rather than the original 3) to make the color/width
-    // steps small enough that the banding isn't obviously visible.
-    static constexpr int kHandSegs = 6;
+    // stacked line segments — this used to be 6 (tapered width + color
+    // gradient, a "sword hand" look faked with discrete segments, since a
+    // plain lv_line can't taper/gradient a single stroke) but that made
+    // fast chaos-mode sweeps visibly lag: each segment is an independent
+    // lv_obj with its own SPI-flushed redraw region, and measurement
+    // (comparing 12 total segment-objects vs 3) showed per-object flush
+    // overhead — not SPI clock speed or the dial's background gradient,
+    // both ruled out separately — dominates the per-tick cost on this
+    // MCU/display combo. 1 segment = a plain flat-color hand, but keeps
+    // chaos motion tracking real time instead of falling ~5-10x behind.
+    static constexpr int kHandSegs = 1;
     lv_obj_t* _hourSegs[kHandSegs] = {};
     lv_obj_t* _minSegs[kHandSegs] = {};
     lv_obj_t* _secSegs[kHandSegs] = {};
@@ -101,6 +114,11 @@ private:
     lv_obj_t* _digitSlots[6] = {}; // H tens, H ones, M tens, M ones, S tens, S ones
     lv_obj_t* _colonSlots[2] = {};
     uint32_t _digitsShownSec = UINT32_MAX;
+
+    // Day/date complication ("MON 15"), 3 o'clock position. Updates once
+    // per day, not every tick.
+    lv_obj_t* _dateLabel = nullptr;
+    int _dateShownMday = -1; // -1: not shown yet (tm_mday is always 1..31)
 
     // Info-row rotation: alternates the digit readout between time,
     // temperature, and humidity every kFaceModeDurationUs. Hands keep
@@ -118,6 +136,14 @@ private:
     // the values this app used before they became configurable.
     double _anomalyPeriodSec = 10.0;
     double _anomalyAmplitude = 1.4;
+
+    // Chaos mode state; see setAnomalyLevel()/tickChaos().
+    int _anomalyLevel = 0;            // 0-11
+    double _chaosOffsetSec = 0.0;     // accumulated offset, added to total_sec
+    double _chaosRateSec = 0.0;       // current chaos "velocity" (can go negative)
+    uint32_t _level11ShownRealSec = UINT32_MAX; // gates level-11's once-per-real-second reroll
+    uint32_t _level11RandomSec = 0;
+    int64_t _lastTickUs = 0; // real wall-clock time of the previous tick, for tickChaos()'s dt
 
     esp_lcd_panel_io_handle_t _ioHandle = nullptr;
     esp_lcd_panel_handle_t _panelHandle = nullptr;

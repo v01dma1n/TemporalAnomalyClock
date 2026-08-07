@@ -6,6 +6,7 @@
 #include "esp_lcd_gc9a01.h"
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 
@@ -31,7 +32,7 @@ static const char* TAG = "disp_gc9a01";
 #define LCD_H_RES       240
 #define LCD_V_RES       240
 #define LCD_BITS_PER_PIXEL 16
-#define LCD_SPI_CLOCK_HZ   (20 * 1000 * 1000)
+#define LCD_SPI_CLOCK_HZ   (40 * 1000 * 1000)
 
 #define CLOCK_CENTER_X   (LCD_H_RES / 2)
 #define CLOCK_CENTER_Y   (LCD_V_RES / 2)
@@ -131,6 +132,7 @@ void DispDriverGc9a01RoundClock::begin() {
 // (inclusive at both ends). Used for both the width and radius-boundary
 // ramps below.
 static void fillIntRamp(int16_t out[], int count, int16_t from, int16_t to) {
+    if (count == 1) { out[0] = from; return; } // avoid divide-by-zero below
     for (int i = 0; i < count; i++) {
         out[i] = (int16_t)(from + (int32_t)(to - from) * i / (count - 1));
     }
@@ -141,6 +143,7 @@ static void fillIntRamp(int16_t out[], int count, int16_t from, int16_t to) {
 // of hand-picked hex stops, so the segment count can change without
 // re-deriving intermediate colors by hand.
 static void fillColorRamp(lv_color_t out[], int count, lv_color_t from, lv_color_t to) {
+    if (count == 1) { out[0] = from; return; } // avoid divide-by-zero below
     for (int i = 0; i < count; i++) {
         uint8_t mix = (uint8_t)(255 * (count - 1 - i) / (count - 1));
         out[i] = lv_color_mix(from, to, mix);
@@ -279,6 +282,14 @@ void DispDriverGc9a01RoundClock::buildUi() {
     lv_label_set_text(yearLabel, yearBuf);
     lv_obj_align(yearLabel, LV_ALIGN_CENTER, 0, -28);
 
+    // Day/date complication ("MON 15"), 3 o'clock position — inside the
+    // tick ring (which starts at radius 92-98), clear of the brand/year
+    // text above and the time/temp/humidity row below.
+    _dateLabel = lv_label_create(_faceScreen);
+    lv_obj_set_style_text_font(_dateLabel, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(_dateLabel, lv_color_white(), 0);
+    lv_obj_align(_dateLabel, LV_ALIGN_CENTER, 68, 0);
+
     // widths taper base -> mid -> tip; see setTaperedHand() for the
     // matching radius breakpoints used each tick. Widths and colors ramp
     // base -> tip in kHandSegs steps, simulating light catching a
@@ -407,11 +418,91 @@ void DispDriverGc9a01RoundClock::setAnomalyParams(double periodSec, double ampli
     _anomalyAmplitude = amplitude;
 }
 
+void DispDriverGc9a01RoundClock::setAnomalyLevel(int level) {
+    if (level < 0) level = 0;
+    if (level > 11) level = 11;
+    _anomalyLevel = level;
+}
+
+// Uniform random double in [0,1), using the hardware RNG (no seeding needed).
+static double randUnit() {
+    return (double)(esp_random() % 1000001u) / 1000000.0;
+}
+
+// Uniform random double in [-1,1).
+static double randSigned() {
+    return randUnit() * 2.0 - 1.0;
+}
+
+// Chaos anomaly mode (levels 1-11), layered *additively* on top of the
+// sinusoidal wobble from anomalyDisplayTime() — see setAnomalyLevel().
+// Unlike the sinusoidal system, this does not guarantee any particular
+// long-run accuracy; it's a damped random walk instead:
+//   - occasional random "kicks" to a velocity (_chaosRateSec), probability
+//     and magnitude both scaling with level, so low levels stutter rarely
+//     and high levels kick often and hard;
+//   - velocity mean-reversion pulls the rate back toward 0 over time, but
+//     more weakly at higher levels, so excursions last longer approaching
+//     the high end ("more extreme and unpredictable... frequent and longer
+//     periods of speed change or reversal");
+//   - a gentle "spring" pulls the accumulated position (_chaosOffsetSec)
+//     back toward 0 too, so the clock still stays roughly near real time
+//     over long periods even without an exact-accuracy guarantee.
+// Level 11 is a hard special case handled separately in tickWatchFace():
+// the displayed second becomes fully random each real second, ignoring
+// this walk entirely.
+void DispDriverGc9a01RoundClock::tickChaos(double dt_sec) {
+    if (_anomalyLevel <= 0 || _anomalyLevel >= 11) {
+        _chaosOffsetSec = 0.0;
+        _chaosRateSec = 0.0;
+        return;
+    }
+    double level = (double)_anomalyLevel;
+
+    double kickProb = level / 10.0 * 0.15; // ~1.5%/tick at level 1 .. 15%/tick at level 10
+    if (randUnit() < kickProb) {
+        _chaosRateSec += randSigned() * level * 0.35;
+    }
+
+    double reversion = 2.5 / level; // weaker pull-back at higher levels
+    _chaosRateSec *= (1.0 - reversion * dt_sec);
+    _chaosRateSec += -0.15 * _chaosOffsetSec * dt_sec; // spring back toward real time
+
+    // Hard cap on velocity: without one, a run of same-direction kicks can
+    // accumulate faster than the weak high-level reversion pulls it back
+    // (reported as the second hand "teleporting" and the redraw visibly
+    // lagging — each tick's old/new bounding boxes stop overlapping once
+    // the jump gets large, roughly doubling the SPI-flushed area per
+    // segment right when there are the most segments to flush).
+    double maxRate = level * 4.0;
+    if (_chaosRateSec > maxRate) _chaosRateSec = maxRate;
+    if (_chaosRateSec < -maxRate) _chaosRateSec = -maxRate;
+
+    _chaosOffsetSec += _chaosRateSec * dt_sec;
+}
+
 void DispDriverGc9a01RoundClock::tickWatchFace() {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
     double real_sec = (double)tv.tv_sec + tv.tv_usec / 1000000.0;
     double total_sec = anomalyDisplayTime(real_sec);
+
+    // Chaos mode (levels 1-10; level 11 is handled separately below) adds
+    // on top of the sinusoidal wobble above — see tickChaos(). Uses the
+    // real elapsed time since the previous tick rather than assuming the
+    // nominal 30ms period: if esp_lvgl_port's task falls behind (e.g. a
+    // slow SPI flush from a heavy previous frame), ticks can arrive later
+    // than 30ms apart, and integrating with a hardcoded dt would make the
+    // chaos physics silently drift from its intended speed. Clamped so a
+    // long stall (e.g. AP-mode portal blocking the loop) can't inject one
+    // giant kick when ticking resumes.
+    int64_t now_us = esp_timer_get_time();
+    double dt_sec = (_lastTickUs > 0) ? (double)(now_us - _lastTickUs) / 1e6 : 0.03;
+    if (dt_sec < 0.0) dt_sec = 0.03;
+    if (dt_sec > 0.2) dt_sec = 0.2;
+    _lastTickUs = now_us;
+    tickChaos(dt_sec);
+    total_sec += _chaosOffsetSec;
 
     // total_sec is still a UTC epoch value (the anomaly wobble only adds a
     // small offset in seconds, timezone-agnostic). Break it down via
@@ -427,6 +518,31 @@ void DispDriverGc9a01RoundClock::tickWatchFace() {
     uint32_t m = (uint32_t)tm_local.tm_min;
     uint32_t h = (uint32_t)(tm_local.tm_hour % 12);
     uint32_t sec_whole = (uint32_t)tm_local.tm_sec;
+
+    // Level 11: "completely random numbers" — the displayed second is
+    // fully random, re-rolled once per real elapsed second (not every 30ms
+    // tick, or it'd read as flicker/noise rather than a broken-but-legible
+    // clock). Hour/minute keep tracking real time; only "the second
+    // progression" goes chaotic, per the request. No smooth sub-second
+    // sweep here either — the hand jumps discretely, matching digits.
+    if (_anomalyLevel >= 11) {
+        uint32_t real_whole_sec = (uint32_t)real_sec;
+        if (real_whole_sec != _level11ShownRealSec) {
+            _level11ShownRealSec = real_whole_sec;
+            _level11RandomSec = esp_random() % 60;
+        }
+        sec_whole = _level11RandomSec;
+        s = (double)sec_whole;
+    }
+
+    // Day/date complication — only touches the label once per day.
+    if (tm_local.tm_mday != _dateShownMday) {
+        _dateShownMday = tm_local.tm_mday;
+        static const char* kDayNames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
+        char dateBuf[12];
+        snprintf(dateBuf, sizeof(dateBuf), "%s %d", kDayNames[tm_local.tm_wday], tm_local.tm_mday);
+        lv_label_set_text(_dateLabel, dateBuf);
+    }
 
     // Hands always run, regardless of what the info row below is showing —
     // they're the "at a glance" clock and shouldn't disappear while the
@@ -444,9 +560,9 @@ void DispDriverGc9a01RoundClock::tickWatchFace() {
     // Info row: cycles time -> temperature -> humidity -> time. Skips
     // temperature/humidity entirely (stays on TIME) until a weather
     // reading has actually succeeded at least once.
-    int64_t now_us = esp_timer_get_time();
-    if (now_us - _faceModeSinceUs > kFaceModeDurationUs) {
-        _faceModeSinceUs = now_us;
+    int64_t faceModeNowUs = esp_timer_get_time();
+    if (faceModeNowUs - _faceModeSinceUs > kFaceModeDurationUs) {
+        _faceModeSinceUs = faceModeNowUs;
         do {
             _faceMode = static_cast<FaceMode>((static_cast<int>(_faceMode) + 1) % 3);
         } while (_faceMode != FaceMode::TIME && !_weatherValid);

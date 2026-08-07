@@ -7,6 +7,7 @@ static constexpr const char* KEY_OWM_KEY          = "owm_key";
 static constexpr const char* KEY_OWM_CITY         = "owm_city";
 static constexpr const char* KEY_ANOMALY_PERIOD   = "anom_period";
 static constexpr const char* KEY_ANOMALY_AMPLIT   = "anom_amplit";
+static constexpr const char* KEY_ANOMALY_LEVEL    = "anom_level";
 
 TemporalAnomalyPreferences::TemporalAnomalyPreferences()
     : BasePreferences(config) {
@@ -14,6 +15,7 @@ TemporalAnomalyPreferences::TemporalAnomalyPreferences()
     config.showStartupAnimation = true;
     config.anomalyPeriodSec = 10;
     config.anomalyAmplitudeTimes100 = 140;
+    config.anomalyLevel = 0;
 }
 
 void TemporalAnomalyPreferences::getPreferences() {
@@ -26,6 +28,7 @@ void TemporalAnomalyPreferences::getPreferences() {
     readString(KEY_OWM_CITY, config.owmCity,   sizeof(config.owmCity));
     config.anomalyPeriodSec = readInt(KEY_ANOMALY_PERIOD, 10);
     config.anomalyAmplitudeTimes100 = readInt(KEY_ANOMALY_AMPLIT, 140);
+    config.anomalyLevel = readInt(KEY_ANOMALY_LEVEL, 0);
 
     closeNvs();
 }
@@ -40,6 +43,7 @@ void TemporalAnomalyPreferences::putPreferences() {
     writeString(KEY_OWM_CITY,     config.owmCity);
     writeInt   (KEY_ANOMALY_PERIOD, config.anomalyPeriodSec);
     writeInt   (KEY_ANOMALY_AMPLIT, config.anomalyAmplitudeTimes100);
+    writeInt   (KEY_ANOMALY_LEVEL,  config.anomalyLevel);
 
     closeNvs();
 }
@@ -54,4 +58,5 @@ void TemporalAnomalyPreferences::dumpPreferences() {
     LOGDBG("Pref=%s: %d (%.2fx)", KEY_ANOMALY_AMPLIT,
            (int)config.anomalyAmplitudeTimes100,
            config.anomalyAmplitudeTimes100 / 100.0f);
+    LOGDBG("Pref=%s: %d", KEY_ANOMALY_LEVEL, (int)config.anomalyLevel);
 }

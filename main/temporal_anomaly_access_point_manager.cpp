@@ -31,4 +31,11 @@ void TemporalAnomalyAccessPointManager::initializeFormFields() {
         false, VALIDATION_INTEGER, PREF_INT,
         { .int_pref = &cfg.anomalyAmplitudeTimes100 }, nullptr, 0,
     });
+
+    _formFields.push_back(FormField{
+        "anom_level",
+        "Anomaly chaos level 0-11 (0=off, 1-3 subtle, 4-7 noticeable, 8-10 extreme, 11 fully random)",
+        false, VALIDATION_INTEGER, PREF_INT,
+        { .int_pref = &cfg.anomalyLevel }, nullptr, 0,
+    });
 }

@@ -28,6 +28,7 @@ void TemporalAnomalyClockApp::setupHardware() {
     // read here is enough — no live-reload needed.
     _display.setAnomalyParams(_appPrefs.config.anomalyPeriodSec,
                                _appPrefs.config.anomalyAmplitudeTimes100 / 100.0);
+    _display.setAnomalyLevel(_appPrefs.config.anomalyLevel);
 }
 
 void TemporalAnomalyClockApp::setup() {
