@@ -63,3 +63,6 @@ CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
 # watch face; 14 (brand text itself) is LVGL's compiled-in default already.
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_12=y
+# Needed for the sunburst dial's radial gradient background — off by
+# default, only simple 2-color HOR/VER gradients work without it.
+CONFIG_LV_USE_DRAW_SW_COMPLEX_GRADIENTS=y

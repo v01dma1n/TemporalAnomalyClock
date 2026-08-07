@@ -85,13 +85,16 @@ private:
     lv_obj_t* _faceScreen = nullptr;
 
     // Watch face objects/state (see gc9a01_round_display_test for the
-    // rendering approach these mirror).
-    lv_obj_t* _hourHand = nullptr;
-    lv_obj_t* _minHand = nullptr;
-    lv_obj_t* _secHand = nullptr;
-    lv_point_precise_t _hourPts[2] = {};
-    lv_point_precise_t _minPts[2] = {};
-    lv_point_precise_t _secPts[2] = {};
+    // rendering approach these mirror). Each hand is drawn as 3 stacked
+    // line segments of decreasing width (base/mid/tip) for a tapered
+    // "sword hand" look — a plain lv_line can't taper a single stroke.
+    static constexpr int kHandSegs = 3;
+    lv_obj_t* _hourSegs[kHandSegs] = {};
+    lv_obj_t* _minSegs[kHandSegs] = {};
+    lv_obj_t* _secSegs[kHandSegs] = {};
+    lv_point_precise_t _hourSegPts[kHandSegs][2] = {};
+    lv_point_precise_t _minSegPts[kHandSegs][2] = {};
+    lv_point_precise_t _secSegPts[kHandSegs][2] = {};
     lv_obj_t* _digitSlots[6] = {}; // H tens, H ones, M tens, M ones, S tens, S ones
     lv_obj_t* _colonSlots[2] = {};
     uint32_t _digitsShownSec = UINT32_MAX;

@@ -127,12 +127,17 @@ void DispDriverGc9a01RoundClock::begin() {
 
 // --- UI construction ---------------------------------------------------------
 
-static lv_obj_t* createHand(lv_obj_t* parent, int16_t width, lv_color_t color) {
-    lv_obj_t* hand = lv_line_create(parent);
-    lv_obj_set_style_line_width(hand, width, 0);
-    lv_obj_set_style_line_color(hand, color, 0);
-    lv_obj_set_style_line_rounded(hand, true, 0);
-    return hand;
+// Creates the 3 line objects for one tapered hand (base/mid/tip).
+// widths[i] is used for segs[i] — see setTaperedHand() for how the
+// segments are positioned along the hand each tick.
+static void createTaperedHand(lv_obj_t* parent, lv_obj_t* segs[3],
+                               const int16_t widths[3], lv_color_t color) {
+    for (int i = 0; i < 3; i++) {
+        segs[i] = lv_line_create(parent);
+        lv_obj_set_style_line_width(segs[i], widths[i], 0);
+        lv_obj_set_style_line_color(segs[i], color, 0);
+        lv_obj_set_style_line_rounded(segs[i], true, 0);
+    }
 }
 
 static lv_obj_t* createTimeSlot(lv_obj_t* parent, int16_t width, int16_t x_offset, const char* text) {
@@ -162,6 +167,18 @@ void DispDriverGc9a01RoundClock::buildUi() {
     // --- watch face: its own screen, loaded via showClockFace() ---
     _faceScreen = lv_obj_create(nullptr);
     lv_obj_set_style_bg_color(_faceScreen, lv_color_black(), 0);
+
+    // Sunburst dial: a subtle radial gradient (warm dark center fading to
+    // black at the edge) rather than a flat fill, like a brushed/guilloché
+    // watch dial. The lv_grad_dsc_t must outlive this function (LVGL's
+    // style system stores the pointer, not a copy of the struct), hence
+    // `static` here rather than a local.
+    static lv_grad_dsc_t s_dialGrad;
+    static const lv_color_t kDialGradStops[2] = { lv_color_hex(0x3A2E22), lv_color_black() };
+    lv_grad_init_stops(&s_dialGrad, kDialGradStops, nullptr, nullptr, 2);
+    lv_grad_radial_init(&s_dialGrad, CLOCK_CENTER_X, CLOCK_CENTER_Y,
+                         CLOCK_CENTER_X + 116, CLOCK_CENTER_Y, LV_GRAD_EXTEND_PAD);
+    lv_obj_set_style_bg_grad(_faceScreen, &s_dialGrad, 0);
 
     // outer bezel ring
     lv_obj_t* ring = lv_obj_create(_faceScreen);
@@ -194,6 +211,26 @@ void DispDriverGc9a01RoundClock::buildUi() {
         lv_obj_set_style_line_color(tick, copperColor(), 0);
     }
 
+    // minute ticks: short, thin marks at the 48 positions between the hour
+    // ticks (skips every 5th, since those already have an hour tick)
+    for (int i = 0; i < 60; i++) {
+        if (i % 5 == 0) continue;
+        float rad = i * 6.0f * ((float)M_PI / 180.0f);
+        int16_t r_out = 112, r_in = 105;
+        static lv_point_precise_t minute_tick_pts[60][2];
+        minute_tick_pts[i][0].x = CLOCK_CENTER_X + (int16_t)(r_out * sinf(rad));
+        minute_tick_pts[i][0].y = CLOCK_CENTER_Y - (int16_t)(r_out * cosf(rad));
+        minute_tick_pts[i][1].x = CLOCK_CENTER_X + (int16_t)(r_in * sinf(rad));
+        minute_tick_pts[i][1].y = CLOCK_CENTER_Y - (int16_t)(r_in * cosf(rad));
+
+        lv_obj_t* tick = lv_line_create(_faceScreen);
+        lv_obj_set_pos(tick, 0, 0);
+        lv_obj_set_size(tick, LCD_H_RES, LCD_V_RES);
+        lv_line_set_points(tick, minute_tick_pts[i], 2);
+        lv_obj_set_style_line_width(tick, 1, 0);
+        lv_obj_set_style_line_color(tick, copperColor(), 0);
+    }
+
     // Brand text (author + year from version.h), placed between the ticks
     // and the hands so painter's-order z-order puts the hands on top —
     // LVGL draws each screen's children in add order, later = on top.
@@ -211,9 +248,14 @@ void DispDriverGc9a01RoundClock::buildUi() {
     lv_label_set_text(yearLabel, yearBuf);
     lv_obj_align(yearLabel, LV_ALIGN_CENTER, 0, -28);
 
-    _hourHand = createHand(_faceScreen, 6, copperColor());
-    _minHand = createHand(_faceScreen, 4, copperColor());
-    _secHand = createHand(_faceScreen, 3, lv_palette_main(LV_PALETTE_RED));
+    // widths taper base -> mid -> tip; see setTaperedHand() for the
+    // matching radius breakpoints used each tick
+    static constexpr int16_t kHourWidths[3] = {8, 5, 3};
+    static constexpr int16_t kMinWidths[3] = {6, 4, 2};
+    static constexpr int16_t kSecWidths[3] = {3, 2, 1};
+    createTaperedHand(_faceScreen, _hourSegs, kHourWidths, copperColor());
+    createTaperedHand(_faceScreen, _minSegs, kMinWidths, copperColor());
+    createTaperedHand(_faceScreen, _secSegs, kSecWidths, lv_palette_main(LV_PALETTE_RED));
 
     // center hub, drawn last so it sits above the hands
     lv_obj_t* hub = lv_obj_create(_faceScreen);
@@ -246,31 +288,51 @@ void DispDriverGc9a01RoundClock::buildUi() {
 
 // --- Watch face ticking -------------------------------------------------------
 
-static void setHand(lv_obj_t* hand, lv_point_precise_t* pts, float angle_deg, int16_t len) {
+// Positions one segment of a tapered hand, running from radius r0 to r1
+// along angle_deg (both measured from center — segments don't have to
+// start at the center, e.g. the mid/tip segments start where the
+// previous one ended). Same tight-bounding-box technique as the original
+// single-piece hands: each segment's line object is sized/positioned to
+// just cover its own two endpoints, not the whole screen, so redraws stay
+// small. Width is set once at creation (createTaperedHand), not here.
+static void setHandSeg(lv_obj_t* seg, lv_point_precise_t* pts, float angle_deg,
+                        int16_t r0, int16_t r1) {
     float rad = angle_deg * ((float)M_PI / 180.0f);
     int16_t cx = CLOCK_CENTER_X, cy = CLOCK_CENTER_Y;
-    int16_t tx = cx + (int16_t)roundf(len * sinf(rad));
-    int16_t ty = cy - (int16_t)roundf(len * cosf(rad));
+    int16_t x0 = cx + (int16_t)roundf(r0 * sinf(rad));
+    int16_t y0 = cy - (int16_t)roundf(r0 * cosf(rad));
+    int16_t x1 = cx + (int16_t)roundf(r1 * sinf(rad));
+    int16_t y1 = cy - (int16_t)roundf(r1 * cosf(rad));
 
-    int16_t min_x = (cx < tx) ? cx : tx;
-    int16_t max_x = (cx > tx) ? cx : tx;
-    int16_t min_y = (cy < ty) ? cy : ty;
-    int16_t max_y = (cy > ty) ? cy : ty;
-    const int16_t pad = 4; // headroom for line width + rounded caps
+    int16_t min_x = (x0 < x1) ? x0 : x1;
+    int16_t max_x = (x0 > x1) ? x0 : x1;
+    int16_t min_y = (y0 < y1) ? y0 : y1;
+    int16_t max_y = (y0 > y1) ? y0 : y1;
+    const int16_t pad = 5; // headroom for the widest segment + rounded caps
 
     int16_t ox = min_x - pad;
     int16_t oy = min_y - pad;
     int16_t ow = (max_x - min_x) + 2 * pad;
     int16_t oh = (max_y - min_y) + 2 * pad;
 
-    pts[0].x = cx - ox;
-    pts[0].y = cy - oy;
-    pts[1].x = tx - ox;
-    pts[1].y = ty - oy;
+    pts[0].x = x0 - ox;
+    pts[0].y = y0 - oy;
+    pts[1].x = x1 - ox;
+    pts[1].y = y1 - oy;
 
-    lv_obj_set_pos(hand, ox, oy);
-    lv_obj_set_size(hand, ow, oh);
-    lv_line_set_points(hand, pts, 2);
+    lv_obj_set_pos(seg, ox, oy);
+    lv_obj_set_size(seg, ow, oh);
+    lv_line_set_points(seg, pts, 2);
+}
+
+// Updates all 3 segments of a tapered hand. radii = {r0, r1, r2, r3}, the
+// 4 boundary radii for the 3 segments (base: r0->r1, mid: r1->r2, tip:
+// r2->r3) — r0 is normally 0 (the hub).
+static void setTaperedHand(lv_obj_t* segs[3], lv_point_precise_t segPts[3][2],
+                            float angle_deg, const int16_t radii[4]) {
+    for (int i = 0; i < 3; i++) {
+        setHandSeg(segs[i], segPts[i], angle_deg, radii[i], radii[i + 1]);
+    }
 }
 
 static void setDigit(lv_obj_t* slot, uint32_t value) {
@@ -327,10 +389,14 @@ void DispDriverGc9a01RoundClock::tickWatchFace() {
 
     // Hands always run, regardless of what the info row below is showing —
     // they're the "at a glance" clock and shouldn't disappear while the
-    // rotation is on temperature/humidity.
-    setHand(_hourHand, _hourPts, h * 30.0f + m * 0.5f, HOUR_HAND_LEN);
-    setHand(_minHand, _minPts, m * 6.0f + (float)s * 0.1f, MIN_HAND_LEN);
-    setHand(_secHand, _secPts, (float)s * 6.0f, SEC_HAND_LEN);
+    // rotation is on temperature/humidity. Radius breakpoints match the
+    // widths given to createTaperedHand() in buildUi().
+    static constexpr int16_t kHourRadii[4] = {0, 20, 40, HOUR_HAND_LEN};
+    static constexpr int16_t kMinRadii[4] = {0, 32, 62, MIN_HAND_LEN};
+    static constexpr int16_t kSecRadii[4] = {0, 30, 65, SEC_HAND_LEN};
+    setTaperedHand(_hourSegs, _hourSegPts, h * 30.0f + m * 0.5f, kHourRadii);
+    setTaperedHand(_minSegs, _minSegPts, m * 6.0f + (float)s * 0.1f, kMinRadii);
+    setTaperedHand(_secSegs, _secSegPts, (float)s * 6.0f, kSecRadii);
 
     // Info row: cycles time -> temperature -> humidity -> time. Skips
     // temperature/humidity entirely (stays on TIME) until a weather
