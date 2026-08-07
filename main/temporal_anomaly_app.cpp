@@ -21,6 +21,12 @@ TemporalAnomalyClockApp::TemporalAnomalyClockApp()
 }
 
 void TemporalAnomalyClockApp::setupHardware() {
+    // setBrandText() must land before begin() -- buildUi() (called inside
+    // begin()) bakes it into fixed labels created once at startup.
+    char yearBuf[5];
+    snprintf(yearBuf, sizeof(yearBuf), "%.4s", APP_DATE); // APP_DATE is "YYYY-MM-DD"
+    _display.setBrandText(APP_AUTHOR, yearBuf);
+
     _displayManager->begin();
     // Preferences are already loaded by this point in the BaseNtpClockApp
     // lifecycle (setup() calls _prefs->setup()/getPreferences() before

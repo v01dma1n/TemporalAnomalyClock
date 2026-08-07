@@ -1,4 +1,4 @@
-# temporal_anomaly_clock sdkconfig defaults.
+# TemporalAnomalyClock sdkconfig defaults.
 # Apply with: idf.py reconfigure (first build picks them up automatically).
 # Adapted from MoodWhisperer's sdkconfig.defaults for the ESP32-C3 (single
 # core) + round GC9A01/LVGL display instead of MoodWhisperer's dual-core

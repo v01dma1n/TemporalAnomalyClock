@@ -1,4 +1,4 @@
-// main.cpp — ESP-IDF entry point for temporal_anomaly_clock.
+// main.cpp — ESP-IDF entry point for TemporalAnomalyClock.
 //
 // Task layout (single-core ESP32-C3, so no PinnedToCore split like
 // MoodWhisperer's dual-core ESP32-WROOM):
@@ -51,7 +51,7 @@ static void appTask(void* /*pvParameters*/) {
 }
 
 extern "C" void app_main(void) {
-    LOGINF(">>> temporal_anomaly_clock booting");
+    LOGINF(">>> TemporalAnomalyClock booting");
 
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES ||

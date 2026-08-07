@@ -48,28 +48,32 @@ re-applies orientation from `disp_cfg.rotation` internally.
 ## Project layout
 
 ```
-temporal_anomaly_clock/
+TemporalAnomalyClock/
 ├── CMakeLists.txt
 ├── sdkconfig.defaults
 ├── partitions/
 │   └── partitions.csv
 ├── components/
-│   ├── esp32_ntp_clock/    # git submodule → ESP32NTPClock2 (the "engine")
-│   └── esp32_wifi/         # git submodule → ESP32WiFi2 (WiFi + prefs + portal)
+│   ├── esp32_ntp_clock/         # git submodule → ESP32NTPClock2 (the "engine")
+│   ├── esp32_wifi/              # git submodule → ESP32WiFi2 (WiFi + prefs + portal)
+│   └── esp32_ntp_clock_drivers/ # git submodule → ESP32NTPClockDrivers2
+│       └── gc9a01/              # only this nested component is used — see below
 └── main/                   # the application
     ├── main.cpp
     ├── temporal_anomaly_app.{h,cpp}
     ├── temporal_anomaly_preferences.{h,cpp}
     ├── temporal_anomaly_access_point_manager.{h,cpp}
-    ├── temporal_anomaly_time_source.{h,cpp}   # the "anomaly" itself — see Architecture
-    ├── i_display_time_provider.h              # the generic interface it implements
-    ├── disp_driver_gc9a01_round_clock.{h,cpp} # generic round-LCD watch face driver
-    └── version.h
+    └── temporal_anomaly_time_source.{h,cpp}   # the "anomaly" itself — see Architecture
 ```
 
-No `esp32_ntp_clock_drivers` submodule — that repo supplies MAX6921/
-PT6315-style multiplexed VFD drivers, not applicable to a pixel LCD. The
-display driver here is bespoke, living directly in `main/`.
+The GC9A01 display driver itself (`DispDriverGc9a01RoundClock`) and the
+generic `IDisplayTimeProvider` interface it implements both live in the
+shared [ESP32NTPClockDrivers2](https://github.com/v01dma1n/ESP32NTPClockDrivers2)
+repo, under its `gc9a01/` nested component — not in `main/`. That
+component is LVGL-based, unlike every other driver in that shared repo,
+so it's kept separate and only pulled in by projects that explicitly opt
+in (see that repo's README and this project's top-level `CMakeLists.txt`
+for the `EXTRA_COMPONENT_DIRS`/`EXCLUDE_COMPONENTS` wiring this needs).
 
 ---
 
@@ -82,7 +86,7 @@ Same engine as MoodWhisperer: `BaseNtpClockApp`, `ClockFsmManager`,
 `BaseAccessPointManager`. See either project's submodule source for the
 full interface surface — nothing about it is modified here.
 
-### 2. Display driver (`main/disp_driver_gc9a01_round_clock.{h,cpp}`)
+### 2. Display driver (`components/esp32_ntp_clock_drivers/gc9a01/`)
 
 `DispDriverGc9a01RoundClock` is deliberately generic and reusable — it has
 no notion of "temporal anomaly," wobble, or chaos. It has two jobs on one
@@ -275,8 +279,9 @@ portal.
 
 Requirements: ESP-IDF ≥ 5.1, targeting `esp32c3`.
 
-The `components/esp32_ntp_clock` and `components/esp32_wifi` directories
-are git submodules. Initialise them after cloning:
+The `components/esp32_ntp_clock`, `components/esp32_wifi`, and
+`components/esp32_ntp_clock_drivers` directories are git submodules.
+Initialise them after cloning:
 
 ```bash
 git clone --recurse-submodules <this-repo>
@@ -288,7 +293,7 @@ Then build and flash:
 
 ```bash
 . $IDF_PATH/export.sh
-cd temporal_anomaly_clock
+cd TemporalAnomalyClock
 idf.py set-target esp32c3
 idf.py build
 idf.py -p /dev/ttyACM0 flash
