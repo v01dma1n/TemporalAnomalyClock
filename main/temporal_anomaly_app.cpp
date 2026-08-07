@@ -26,9 +26,10 @@ void TemporalAnomalyClockApp::setupHardware() {
     // lifecycle (setup() calls _prefs->setup()/getPreferences() before
     // setupHardware()). A portal save reboots the device, so a one-time
     // read here is enough — no live-reload needed.
-    _display.setAnomalyParams(_appPrefs.config.anomalyPeriodSec,
-                               _appPrefs.config.anomalyAmplitudeTimes100 / 100.0);
-    _display.setAnomalyLevel(_appPrefs.config.anomalyLevel);
+    _timeSource.setWobbleParams(_appPrefs.config.anomalyPeriodSec,
+                                 _appPrefs.config.anomalyAmplitudeTimes100 / 100.0);
+    _timeSource.setChaosLevel(_appPrefs.config.anomalyLevel);
+    _display.setTimeProvider(&_timeSource);
 }
 
 void TemporalAnomalyClockApp::setup() {

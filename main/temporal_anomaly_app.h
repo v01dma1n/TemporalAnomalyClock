@@ -17,9 +17,15 @@
 // falls back to AP_MODE the same way it would for any RTC-less app.
 //
 // Dropped vs the Arduino original: the per-minute Matrix animation
-// (VFD-specific, no equivalent on a pixel LCD) and the "anomaly level"
-// preference (was stored but never actually consulted anywhere in the
-// original app logic — see temporal_anomaly_preferences.h).
+// (VFD-specific, no equivalent on a pixel LCD). The original's "anomaly
+// level" preference was dropped too (it was dead code there) but the name
+// is back as a real, from-scratch feature — see
+// temporal_anomaly_time_source.h and temporal_anomaly_preferences.h.
+//
+// _timeSource owns the "what time to display" logic (sinusoidal wobble +
+// chaos levels) and is wired into _display via setTimeProvider() in
+// setupHardware() — the display driver itself has no idea any of that
+// exists, it just renders whatever time it's handed each tick.
 
 #pragma once
 
@@ -27,6 +33,7 @@
 #include "disp_driver_gc9a01_round_clock.h"
 #include "temporal_anomaly_preferences.h"
 #include "temporal_anomaly_access_point_manager.h"
+#include "temporal_anomaly_time_source.h"
 
 #include <memory>
 
@@ -68,6 +75,7 @@ private:
 
     DispDriverGc9a01RoundClock        _display;
     std::unique_ptr<DisplayManager>   _displayManager;
+    TemporalAnomalyTimeSource         _timeSource;
 
     TemporalAnomalyPreferences         _appPrefs;
     TemporalAnomalyAccessPointManager  _apManagerConcrete;

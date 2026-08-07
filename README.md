@@ -61,7 +61,9 @@ temporal_anomaly_clock/
     ├── temporal_anomaly_app.{h,cpp}
     ├── temporal_anomaly_preferences.{h,cpp}
     ├── temporal_anomaly_access_point_manager.{h,cpp}
-    ├── disp_driver_gc9a01_round_clock.{h,cpp}
+    ├── temporal_anomaly_time_source.{h,cpp}   # the "anomaly" itself — see Architecture
+    ├── i_display_time_provider.h              # the generic interface it implements
+    ├── disp_driver_gc9a01_round_clock.{h,cpp} # generic round-LCD watch face driver
     └── version.h
 ```
 
@@ -82,7 +84,9 @@ full interface surface — nothing about it is modified here.
 
 ### 2. Display driver (`main/disp_driver_gc9a01_round_clock.{h,cpp}`)
 
-`DispDriverGc9a01RoundClock` has two jobs on one physical screen:
+`DispDriverGc9a01RoundClock` is deliberately generic and reusable — it has
+no notion of "temporal anomaly," wobble, or chaos. It has two jobs on one
+physical screen:
 
 - **`IDisplayDriver` implementation** — satisfies the engine's
   character-grid contract (`setChar`, segment masks, frame buffers) so
@@ -103,7 +107,32 @@ The two live on separate LVGL screens (`_bootScreen` / `_faceScreen`),
 switched via `lv_scr_load()`. `showClockFace()` flips between them once
 the FSM reaches `RUNNING_NORMAL`.
 
-### 3. Application (`main/temporal_anomaly_*`)
+Each tick, the driver just asks *"what time is it"* via a small interface
+it defines and owns no opinion about the answer to:
+
+```cpp
+// i_display_time_provider.h
+struct DisplayTime { int hour, minute; double second; int wday, mday; };
+class IDisplayTimeProvider {
+public:
+    virtual DisplayTime getDisplayTime() = 0;
+};
+```
+
+`setTimeProvider(IDisplayTimeProvider*)` wires in whatever answers that
+question. A different app could plug in a provider that just calls
+`localtime_r()` on real time and get an ordinary accurate clock out of
+this same driver, unmodified.
+
+### 3. The anomaly (`main/temporal_anomaly_time_source.{h,cpp}`)
+
+`TemporalAnomalyTimeSource : IDisplayTimeProvider` is what actually makes
+this clock a *temporal anomaly* clock rather than a plain one — the
+sinusoidal wobble and the chaos levels (see below) both live here,
+entirely decoupled from LVGL/rendering. `TemporalAnomalyClockApp` owns the
+instance and wires it into the display driver in `setupHardware()`.
+
+### 4. Application (`main/temporal_anomaly_*`)
 
 - `TemporalAnomalyPreferences : BasePreferences` — adds startup-animation
   toggle, OpenWeatherMap key/city, and the anomaly wobble period/amplitude
@@ -111,9 +140,10 @@ the FSM reaches `RUNNING_NORMAL`.
 - `TemporalAnomalyAccessPointManager : BaseAccessPointManager` — adds the
   matching rows to the captive portal.
 - `TemporalAnomalyClockApp : BaseNtpClockApp` — owns the display driver,
-  the display manager, and the shared `WeatherManager`. No scene
-  playlist; `loop()` toggles `showClockFace()` directly off FSM state and
-  feeds fresh weather readings into the display driver each tick.
+  the time source, the display manager, and the shared `WeatherManager`.
+  No scene playlist; `loop()` toggles `showClockFace()` directly off FSM
+  state and feeds fresh weather readings into the display driver each
+  tick.
 
 ---
 

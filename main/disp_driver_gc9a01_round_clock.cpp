@@ -6,15 +6,12 @@
 #include "esp_lcd_gc9a01.h"
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
-#include "esp_random.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <ctime>
-#include <sys/time.h>
 
 static const char* TAG = "disp_gc9a01";
 
@@ -392,155 +389,22 @@ static void setDigit(lv_obj_t* slot, uint32_t value) {
     lv_label_set_text(slot, buf);
 }
 
-// "Temporal anomaly" wobble: the watch face displays time running faster
-// and slower than reality, but stays exactly correct on average. Modeled as
-// a sinusoidal *rate* around 1.0x: rate(t) = 1 + A*sin(2*pi*t/P). Integrating
-// that rate gives the displayed-time offset from real time:
-//   offset(t) = C * (1 - cos(2*pi*t/P)),  C = A*P/(2*pi)
-// offset(t) is periodic with period P, so offset(t+60) - offset(t) is
-// exactly zero whenever P evenly divides 60 — meaning displayed time gains
-// exactly as much as it loses over *any* 60-second window, not just ones
-// aligned to a particular phase. This holds regardless of amplitude, so
-// with A > 1 the rate swings negative for part of each cycle (min is 1-A)
-// and the hands/digits visibly run backwards for a moment before catching
-// back up — still exactly correct on average.
-// This only perturbs what's drawn on the watch face — real system time
-// (NTP, logs, preferences) is untouched; see tickWatchFace(). Period and
-// amplitude are configurable via the portal — see setAnomalyParams().
-double DispDriverGc9a01RoundClock::anomalyDisplayTime(double real_sec) const {
-    double c = _anomalyAmplitude * _anomalyPeriodSec / (2.0 * M_PI);
-    double phase = 2.0 * M_PI * real_sec / _anomalyPeriodSec;
-    return real_sec + c * (1.0 - cos(phase));
-}
-
-void DispDriverGc9a01RoundClock::setAnomalyParams(double periodSec, double amplitude) {
-    _anomalyPeriodSec = (periodSec > 0.0) ? periodSec : 1.0;
-    _anomalyAmplitude = amplitude;
-}
-
-void DispDriverGc9a01RoundClock::setAnomalyLevel(int level) {
-    if (level < 0) level = 0;
-    if (level > 11) level = 11;
-    _anomalyLevel = level;
-}
-
-// Uniform random double in [0,1), using the hardware RNG (no seeding needed).
-static double randUnit() {
-    return (double)(esp_random() % 1000001u) / 1000000.0;
-}
-
-// Uniform random double in [-1,1).
-static double randSigned() {
-    return randUnit() * 2.0 - 1.0;
-}
-
-// Chaos anomaly mode (levels 1-11), layered *additively* on top of the
-// sinusoidal wobble from anomalyDisplayTime() — see setAnomalyLevel().
-// Unlike the sinusoidal system, this does not guarantee any particular
-// long-run accuracy; it's a damped random walk instead:
-//   - occasional random "kicks" to a velocity (_chaosRateSec), probability
-//     and magnitude both scaling with level, so low levels stutter rarely
-//     and high levels kick often and hard;
-//   - velocity mean-reversion pulls the rate back toward 0 over time, but
-//     more weakly at higher levels, so excursions last longer approaching
-//     the high end ("more extreme and unpredictable... frequent and longer
-//     periods of speed change or reversal");
-//   - a gentle "spring" pulls the accumulated position (_chaosOffsetSec)
-//     back toward 0 too, so the clock still stays roughly near real time
-//     over long periods even without an exact-accuracy guarantee.
-// Level 11 is a hard special case handled separately in tickWatchFace():
-// the displayed second becomes fully random each real second, ignoring
-// this walk entirely.
-void DispDriverGc9a01RoundClock::tickChaos(double dt_sec) {
-    if (_anomalyLevel <= 0 || _anomalyLevel >= 11) {
-        _chaosOffsetSec = 0.0;
-        _chaosRateSec = 0.0;
-        return;
-    }
-    double level = (double)_anomalyLevel;
-
-    double kickProb = level / 10.0 * 0.15; // ~1.5%/tick at level 1 .. 15%/tick at level 10
-    if (randUnit() < kickProb) {
-        _chaosRateSec += randSigned() * level * 0.35;
-    }
-
-    double reversion = 2.5 / level; // weaker pull-back at higher levels
-    _chaosRateSec *= (1.0 - reversion * dt_sec);
-    _chaosRateSec += -0.15 * _chaosOffsetSec * dt_sec; // spring back toward real time
-
-    // Hard cap on velocity: without one, a run of same-direction kicks can
-    // accumulate faster than the weak high-level reversion pulls it back
-    // (reported as the second hand "teleporting" and the redraw visibly
-    // lagging — each tick's old/new bounding boxes stop overlapping once
-    // the jump gets large, roughly doubling the SPI-flushed area per
-    // segment right when there are the most segments to flush).
-    double maxRate = level * 4.0;
-    if (_chaosRateSec > maxRate) _chaosRateSec = maxRate;
-    if (_chaosRateSec < -maxRate) _chaosRateSec = -maxRate;
-
-    _chaosOffsetSec += _chaosRateSec * dt_sec;
-}
-
 void DispDriverGc9a01RoundClock::tickWatchFace() {
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    double real_sec = (double)tv.tv_sec + tv.tv_usec / 1000000.0;
-    double total_sec = anomalyDisplayTime(real_sec);
+    if (!_timeProvider) return; // not wired up yet
 
-    // Chaos mode (levels 1-10; level 11 is handled separately below) adds
-    // on top of the sinusoidal wobble above — see tickChaos(). Uses the
-    // real elapsed time since the previous tick rather than assuming the
-    // nominal 30ms period: if esp_lvgl_port's task falls behind (e.g. a
-    // slow SPI flush from a heavy previous frame), ticks can arrive later
-    // than 30ms apart, and integrating with a hardcoded dt would make the
-    // chaos physics silently drift from its intended speed. Clamped so a
-    // long stall (e.g. AP-mode portal blocking the loop) can't inject one
-    // giant kick when ticking resumes.
-    int64_t now_us = esp_timer_get_time();
-    double dt_sec = (_lastTickUs > 0) ? (double)(now_us - _lastTickUs) / 1e6 : 0.03;
-    if (dt_sec < 0.0) dt_sec = 0.03;
-    if (dt_sec > 0.2) dt_sec = 0.2;
-    _lastTickUs = now_us;
-    tickChaos(dt_sec);
-    total_sec += _chaosOffsetSec;
+    DisplayTime dt = _timeProvider->getDisplayTime();
 
-    // total_sec is still a UTC epoch value (the anomaly wobble only adds a
-    // small offset in seconds, timezone-agnostic). Break it down via
-    // localtime_r() rather than raw modulo arithmetic so the face respects
-    // the configured/detected timezone (see sntp_client.cpp's setenv("TZ",
-    // ...)/tzset()) instead of always showing UTC.
-    double frac = total_sec - floor(total_sec);
-    time_t epoch = (time_t)total_sec;
-    struct tm tm_local;
-    localtime_r(&epoch, &tm_local);
-
-    double s = tm_local.tm_sec + frac;
-    uint32_t m = (uint32_t)tm_local.tm_min;
-    uint32_t h = (uint32_t)(tm_local.tm_hour % 12);
-    uint32_t sec_whole = (uint32_t)tm_local.tm_sec;
-
-    // Level 11: "completely random numbers" — the displayed second is
-    // fully random, re-rolled once per real elapsed second (not every 30ms
-    // tick, or it'd read as flicker/noise rather than a broken-but-legible
-    // clock). Hour/minute keep tracking real time; only "the second
-    // progression" goes chaotic, per the request. No smooth sub-second
-    // sweep here either — the hand jumps discretely, matching digits.
-    if (_anomalyLevel >= 11) {
-        uint32_t real_whole_sec = (uint32_t)real_sec;
-        if (real_whole_sec != _level11ShownRealSec) {
-            _level11ShownRealSec = real_whole_sec;
-            _level11RandomSec = esp_random() % 60;
-        }
-        sec_whole = _level11RandomSec;
-        s = (double)sec_whole;
-    }
+    double s = dt.second;
+    uint32_t m = (uint32_t)dt.minute;
+    uint32_t h = (uint32_t)(dt.hour % 12);
+    uint32_t sec_whole = (uint32_t)dt.second;
 
     // Day/date complication — only touches the label once per day.
-    if (tm_local.tm_mday != _dateShownMday) {
-        _dateShownMday = tm_local.tm_mday;
+    if (dt.mday != _dateShownMday) {
+        _dateShownMday = dt.mday;
         static const char* kDayNames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
         char dateBuf[12];
-        snprintf(dateBuf, sizeof(dateBuf), "%s %d", kDayNames[tm_local.tm_wday], tm_local.tm_mday);
+        snprintf(dateBuf, sizeof(dateBuf), "%s %d", kDayNames[dt.wday], dt.mday);
         lv_label_set_text(_dateLabel, dateBuf);
     }
 
@@ -569,8 +433,13 @@ void DispDriverGc9a01RoundClock::tickWatchFace() {
         updateFaceModeVisibility();
     }
 
-    if (_faceMode == FaceMode::TIME && (uint32_t)epoch != _digitsShownSec) {
-        _digitsShownSec = (uint32_t)epoch;
+    // Packs (hour, minute, whole-second) into one comparable value to gate
+    // digit refreshes to actual changes — uses the raw 0-23 hour (not the
+    // 0-11 `h` used for hand angle above) so AM/PM don't alias to the same
+    // key.
+    uint32_t shownKey = (uint32_t)dt.hour * 3600u + m * 60u + sec_whole;
+    if (_faceMode == FaceMode::TIME && shownKey != _digitsShownSec) {
+        _digitsShownSec = shownKey;
         uint32_t hh = h;
         if (hh == 0) hh = 12;
         setDigit(_digitSlots[0], hh / 10);

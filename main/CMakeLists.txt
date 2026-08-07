@@ -6,6 +6,7 @@ idf_component_register(
         "temporal_anomaly_app.cpp"
         "temporal_anomaly_preferences.cpp"
         "temporal_anomaly_access_point_manager.cpp"
+        "temporal_anomaly_time_source.cpp"
         "disp_driver_gc9a01_round_clock.cpp"
     INCLUDE_DIRS
         "."

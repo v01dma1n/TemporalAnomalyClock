@@ -1,4 +1,12 @@
-// disp_driver_gc9a01_round_clock.h — GC9A01 round LCD driver for this app.
+// disp_driver_gc9a01_round_clock.h — GC9A01 round LCD driver.
+//
+// Deliberately generic/reusable: this driver has no notion of "temporal
+// anomaly", wobble, or chaos — it just renders whatever time it's handed
+// by an IDisplayTimeProvider each tick (see i_display_time_provider.h and
+// setTimeProvider()). The app-specific "what time to show" logic lives in
+// temporal_anomaly_time_source.h/.cpp; a different app could plug in a
+// plain real-time provider instead and get an ordinary accurate clock out
+// of this same driver.
 //
 // Two responsibilities layered on one LVGL screen:
 //
@@ -27,6 +35,7 @@
 #pragma once
 
 #include "i_display_driver.h"
+#include "i_display_time_provider.h"
 
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -57,18 +66,12 @@ public:
     // already built at begin()-time; this just toggles visibility.
     void showClockFace(bool show);
 
-    // Configures the watch face's time-wobble effect (see anomalyDisplayTime()
-    // in the .cpp for the math). periodSec must be > 0; clamped to 1 if not.
-    // amplitude has no hard constraint — 1.0 is steady real time, >1.0 lets
-    // the hands run backwards for part of each cycle.
-    void setAnomalyParams(double periodSec, double amplitude);
-
-    // Chaos anomaly level, independent of setAnomalyParams()'s sinusoidal
-    // wobble (both apply additively — see tickChaos()). 0 = off, 1-11
-    // increasing volatility, 11 = fully random seconds. Clamped to [0,11].
-    // Unlike the sinusoidal wobble, this does NOT guarantee any particular
-    // long-run accuracy.
-    void setAnomalyLevel(int level);
+    // What time the watch face renders. Must be called before the tick
+    // timer starts producing meaningful frames (a call any time before or
+    // during setupHardware() is fine) — until it is, ticks are a no-op.
+    // The driver doesn't own or care what the provider does internally;
+    // see i_display_time_provider.h.
+    void setTimeProvider(IDisplayTimeProvider* provider) { _timeProvider = provider; }
 
     // Feeds the latest weather reading in for the temperature/humidity face
     // rotation. Safe to call every app loop() tick; only used when valid.
@@ -80,9 +83,7 @@ private:
     void buildUi();
     void tickWatchFace();
     static void tickTimerCb(lv_timer_t* timer);
-    double anomalyDisplayTime(double real_sec) const;
     void updateFaceModeVisibility();
-    void tickChaos(double dt_sec);
 
     char _statusBuf[kStatusCells + 1] = {};
     bool _began = false;
@@ -132,18 +133,9 @@ private:
     int _humidity = 0;
     bool _weatherValid = false;
 
-    // Watch-face time-wobble params; see setAnomalyParams(). Defaults match
-    // the values this app used before they became configurable.
-    double _anomalyPeriodSec = 10.0;
-    double _anomalyAmplitude = 1.4;
-
-    // Chaos mode state; see setAnomalyLevel()/tickChaos().
-    int _anomalyLevel = 0;            // 0-11
-    double _chaosOffsetSec = 0.0;     // accumulated offset, added to total_sec
-    double _chaosRateSec = 0.0;       // current chaos "velocity" (can go negative)
-    uint32_t _level11ShownRealSec = UINT32_MAX; // gates level-11's once-per-real-second reroll
-    uint32_t _level11RandomSec = 0;
-    int64_t _lastTickUs = 0; // real wall-clock time of the previous tick, for tickChaos()'s dt
+    // What time to render each tick; see setTimeProvider(). Not owned —
+    // the caller (app layer) owns the concrete provider's lifetime.
+    IDisplayTimeProvider* _timeProvider = nullptr;
 
     esp_lcd_panel_io_handle_t _ioHandle = nullptr;
     esp_lcd_panel_handle_t _panelHandle = nullptr;
