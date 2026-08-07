@@ -59,6 +59,15 @@ void TemporalAnomalyClockApp::loop() {
     WeatherData w = _weatherManager.getWeatherData();
     _display.setWeatherData(w.tempF, w.humidity, w.valid);
 
+    // Rate gauge full-scale: a first-pass estimate, not derived from
+    // anything precise. Default wobble amplitude (1.4) alone deflects to
+    // ~28-56% of the gauge; any active chaos level (rate cap = level*4.0,
+    // see TemporalAnomalyTimeSource::tickChaos()) pushes further toward
+    // saturation as the level rises -- pegging at the extremes under
+    // heavy chaos is an intentional, expected look, not a bug.
+    static constexpr float kRateGaugeFullScale = 5.0f;
+    _display.setRateGauge((float)_timeSource.lastRateDeviation(), kRateGaugeFullScale);
+
     bool running = _fsmManager && _fsmManager->isInState("RUNNING_NORMAL");
     if (running != _wasRunning) {
         _display.showClockFace(running);

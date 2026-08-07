@@ -110,6 +110,14 @@ DisplayTime TemporalAnomalyTimeSource::getDisplayTime() {
 
     double total_sec = real_sec + wobble + _chaosOffsetSec;
 
+    // Instantaneous rate deviation from 1.0x: d(wobble)/d(real_sec) works
+    // out to A*sin(phase) (the derivative of c*(1-cos(phase)) w.r.t. real
+    // time, using c = A*P/(2*pi) so the P/(2*pi) factors cancel), plus
+    // the chaos walk's current velocity, which by construction already
+    // *is* its instantaneous rate contribution (_chaosOffsetSec
+    // integrates _chaosRateSec each tick). See lastRateDeviation().
+    _lastRateDeviation = _amplitude * sin(phase) + _chaosRateSec;
+
     // total_sec is still a UTC epoch value (both perturbations only add a
     // small offset in seconds, timezone-agnostic). Break it down via
     // localtime_r() rather than raw modulo arithmetic so the result

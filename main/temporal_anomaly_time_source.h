@@ -40,6 +40,16 @@ public:
     // --- IDisplayTimeProvider ------------------------------------------
     DisplayTime getDisplayTime() override;
 
+    // How fast displayed time is *currently* running relative to real
+    // time, as a deviation from 1.0x (0.0 = normal speed, positive =
+    // running fast, negative = running slow) -- the instantaneous rate,
+    // combining both the sinusoidal wobble's rate contribution
+    // (A*sin(phase)) and the chaos walk's current velocity
+    // (_chaosRateSec). Updated on each getDisplayTime() call; meant for
+    // driving a UI indicator (see DispDriverGc9a01RoundClock::
+    // setRateGauge()), not for anything precision-sensitive.
+    double lastRateDeviation() const { return _lastRateDeviation; }
+
 private:
     void tickChaos(double dt_sec);
 
@@ -50,6 +60,7 @@ private:
     double _chaosOffsetSec = 0.0;      // accumulated offset, added to total_sec
     double _chaosRateSec = 0.0;        // current chaos "velocity" (can go negative)
     int64_t _lastTickUs = 0;           // real wall-clock time of the previous call, for tickChaos()'s dt
+    double _lastRateDeviation = 0.0;   // see lastRateDeviation()
 
     uint32_t _level11ShownRealSec = UINT32_MAX; // gates level-11's once-per-real-second reroll
     uint32_t _level11RandomSec = 0;
