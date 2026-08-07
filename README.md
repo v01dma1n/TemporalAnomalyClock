@@ -284,7 +284,7 @@ The `components/esp32_ntp_clock`, `components/esp32_wifi`, and
 Initialise them after cloning:
 
 ```bash
-git clone --recurse-submodules <this-repo>
+git clone --recurse-submodules https://github.com/v01dma1n/TemporalAnomalyClock.git
 # or, inside an existing clone:
 git submodule update --init
 ```
