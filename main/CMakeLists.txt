@@ -7,6 +7,7 @@ idf_component_register(
         "temporal_anomaly_preferences.cpp"
         "temporal_anomaly_access_point_manager.cpp"
         "temporal_anomaly_time_source.cpp"
+        "photo_face_data.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES

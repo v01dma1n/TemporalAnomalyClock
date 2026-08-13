@@ -1,4 +1,5 @@
 #include "temporal_anomaly_app.h"
+#include "photo_face.h"
 #include "version.h"
 
 #include <cstdio>
@@ -26,6 +27,9 @@ void TemporalAnomalyClockApp::setupHardware() {
     char yearBuf[5];
     snprintf(yearBuf, sizeof(yearBuf), "%.4s", APP_DATE); // APP_DATE is "YYYY-MM-DD"
     _display.setBrandText(APP_AUTHOR, yearBuf);
+    // Same before-begin() timing requirement as setBrandText() above; see
+    // photo_face.h for where the pixel data comes from.
+    _display.setPhoto(&photo_face_man);
 
     _displayManager->begin();
     // Preferences are already loaded by this point in the BaseNtpClockApp
