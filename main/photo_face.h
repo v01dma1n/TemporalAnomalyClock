@@ -9,6 +9,7 @@
 
 #include "lvgl.h"
 
-extern const lv_image_dsc_t photo_face_man;
-extern const lv_image_dsc_t photo_face_librarian;
+extern const lv_image_dsc_t photo_face_scrivener;
+extern const lv_image_dsc_t photo_face_warden;
 extern const lv_image_dsc_t photo_face_archivist;
+extern const lv_image_dsc_t photo_face_test_signal;

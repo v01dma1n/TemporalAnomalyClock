@@ -1,4 +1,5 @@
 #include "temporal_anomaly_app.h"
+#include "clock_dial_bg.h"
 #include "photo_face.h"
 #include "version.h"
 
@@ -28,12 +29,15 @@ void TemporalAnomalyClockApp::setupHardware() {
     snprintf(yearBuf, sizeof(yearBuf), "%.4s", APP_DATE); // APP_DATE is "YYYY-MM-DD"
     _display.setBrandText(APP_AUTHOR, yearBuf);
     // Same before-begin() timing requirement as setBrandText() above; see
+    // clock_dial_bg.h for where this comes from and what it replaces.
+    _display.setDialBackground(&clock_dial_bg);
+    // Same before-begin() timing requirement as setBrandText() above; see
     // photo_face.h for where the pixel data comes from. Round-robins
     // between these on each visit to photo mode — see setPhotos().
     static const lv_image_dsc_t* const kPhotos[] = {
-        &photo_face_man, &photo_face_librarian, &photo_face_archivist
+        &photo_face_scrivener, &photo_face_warden, &photo_face_archivist, &photo_face_test_signal
     };
-    _display.setPhotos(kPhotos, 3);
+    _display.setPhotos(kPhotos, 4);
 
     _displayManager->begin();
     // Preferences are already loaded by this point in the BaseNtpClockApp
