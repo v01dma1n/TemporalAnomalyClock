@@ -67,6 +67,9 @@ public:
     void activateAccessPoint() override;
     void formatTime(char* txt, unsigned txt_size,
                     const char* format, time_t now) override;
+    // 3-line splash (app name / author / year) needs longer than the 2s
+    // default suits a single-line banner -- see i_base_clock.h.
+    int64_t startupAnimMs() const override { return 4000; }
 
 private:
     TemporalAnomalyClockApp();

@@ -3,6 +3,9 @@
 #include "photo_face.h"
 #include "version.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include <cstdio>
 #include <ctime>
 
@@ -40,6 +43,23 @@ void TemporalAnomalyClockApp::setupHardware() {
     _display.setPhotos(kPhotos, 4);
 
     _displayManager->begin();
+
+    // Startup splash (FSM_STARTUP_ANIM, see startupAnimMs() override) --
+    // was never actually queued despite showStartupAnimation existing as
+    // a portal toggle, so nothing rendered during that window. A static
+    // centered 3-line banner rather than ScrollingTextAnimation --
+    // scrolling is built for single-line segment-style text sliding
+    // through a fixed-width window, and reading a "\n"-joined string
+    // through that same window looked broken (wrapped oddly, not
+    // centered) rather than like three settled lines. showStartupAnimation
+    // now just gates whether the splash shows at all. yearBuf was already
+    // computed above for setBrandText() and is still in scope.
+    if (_appPrefs.config.showStartupAnimation) {
+        char splash[48];
+        snprintf(splash, sizeof(splash), "%s\n%s\n%s", APP_NAME, APP_AUTHOR, yearBuf);
+        _displayManager->setAnimation(std::make_unique<StaticTextAnimation>(splash));
+    }
+
     // Preferences are already loaded by this point in the BaseNtpClockApp
     // lifecycle (setup() calls _prefs->setup()/getPreferences() before
     // setupHardware()). A portal save reboots the device, so a one-time
@@ -102,8 +122,25 @@ void TemporalAnomalyClockApp::activateAccessPoint() {
     _apManagerConcrete.setup(APP_HOST_NAME);
 
     char waiting[48];
-    snprintf(waiting, sizeof(waiting), "JOIN WIFI: %s", APP_HOST_NAME);
+    snprintf(waiting, sizeof(waiting), "JOIN WIFI:\n%s", APP_HOST_NAME);
     _displayManager->setAnimation(std::make_unique<StaticTextAnimation>(waiting));
 
-    _apManagerConcrete.runBlockingLoop();
+    // BaseAccessPointManager::runBlockingLoop() deliberately has no
+    // display dependency (see ESP32WiFi2's CLAUDE.md) -- it's the
+    // caller's job to push banner updates while it's captive, so we run
+    // our own loop here instead of calling it, switching the banner once
+    // a client actually associates to tell them where to point a
+    // browser. The DNS captive-portal hijack pops this automatically on
+    // most phones, but not reliably enough to skip an explicit
+    // instruction -- 192.168.4.1 is the fixed default soft-AP address
+    // (see base_access_point_manager.cpp's startSoftAp()).
+    bool shownConnected = false;
+    while (true) {
+        if (!shownConnected && _apManagerConcrete.isClientConnected()) {
+            shownConnected = true;
+            _displayManager->setAnimation(std::make_unique<StaticTextAnimation>(
+                "OPEN IN BROWSER:\nhttp://192.168.4.1"));
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 }
