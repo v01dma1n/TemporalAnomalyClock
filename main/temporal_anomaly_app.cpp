@@ -5,6 +5,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_app_desc.h"
 
 #include <cstdio>
 #include <ctime>
@@ -41,6 +42,10 @@ void TemporalAnomalyClockApp::setupHardware() {
         &photo_face_scrivener, &photo_face_warden, &photo_face_archivist, &photo_face_test_signal
     };
     _display.setPhotos(kPhotos, 4);
+    // Same before-begin() timing requirement as setBrandText() above.
+    // Firmware version comes from ESP-IDF's git-describe stamp, not a
+    // hand-maintained counter -- see version.h.
+    _display.setVersionTag(esp_app_get_description()->version);
 
     _displayManager->begin();
 

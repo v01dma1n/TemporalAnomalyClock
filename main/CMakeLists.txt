@@ -19,6 +19,8 @@ idf_component_register(
         gc9a01
         nvs_flash
         driver
+    PRIV_REQUIRES
+        esp_app_format
 )
 
 target_compile_options(${COMPONENT_LIB} PUBLIC -std=gnu++17)
